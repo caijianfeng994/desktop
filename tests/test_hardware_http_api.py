@@ -92,6 +92,52 @@ def test_design_page_clears_invalid_engineering_facts():
         assert f"rotation_rpy_deg = {layout_field}" not in html
 
 
+def test_design_page_merges_joint_and_keeps_empty_triples_null():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    # 启用关节必须保留 lower/upper/effort/velocity 等既有字段，并补齐 Pydantic 必填的 name。
+    assert (
+        '          component.joint = {\n'
+        '            ...(component.joint || {}),\n'
+        '            name: jointName(component),\n'
+        '            type: form.elements["joint.type"].value,\n'
+        '            axis,\n'
+        '          };\n'
+    ) in html
+    assert (
+        '    function jointName(component) {\n'
+        '      const fallback = `${component.parent_frame || "base_link"}__${component.instance_id}_joint`;\n'
+        '      return component.joint?.name || fallback.replace(/[^A-Za-z0-9_]+/g, "_");\n'
+        '    }\n'
+    ) in html
+    # 关节轴格式非法或为零向量都必须被捕获，标红并清空 joint。
+    assert (
+        '          const axis = parseTriple(form.elements["joint.axis"].value, "关节轴");\n'
+        '          if (axis.every(value => value === 0)) throw new Error("关节轴不能为 (0, 0, 0)");\n'
+    ) in html
+    assert (
+        '        } catch (error) {\n'
+        '          form.elements["joint.axis"].classList.add("invalid");\n'
+        '          $("[data-form-error]", form).textContent = `${error.message}，已清空关节工程事实`;\n'
+        '          component.joint = null;\n'
+        '          return false;\n'
+        '        }\n'
+    ) in html
+    # 空输入必须保存为 null，绝不能把默认 0,0,0 伪造成工程事实。
+    assert (
+        '    function parseOptionalTriple(input, label) {\n'
+        '      return input.value.trim() ? parseTriple(input.value, label) : null;\n'
+        '    }\n'
+    ) in html
+    assert 'component.position_mm = parseOptionalTriple(form.elements.position_mm, "安装位置");' in html
+    assert (
+        'component.rotation_rpy_deg = parseOptionalTriple(form.elements.rotation_rpy_deg, "安装旋转");'
+    ) in html
+    assert 'value="${escapeHtml(formatTriple(component.position_mm, []))}"' in html
+    assert 'value="${escapeHtml(formatTriple(component.rotation_rpy_deg, []))}"' in html
+    # 浏览器原生 URL 校验会先于 JS 拦截提交，CAD 来源必须是纯文本输入。
+    assert 'type="url"' not in html
+
+
 def test_track_picker_hides_studio_topbar_and_main():
     """选轨首屏必须同时收起旧顶栏，否则步骤导航和保存草稿会误改步骤或冲掉草稿。"""
     html = Path("src/desktop_robot/studio/static/index.html").read_text(encoding="utf-8")

@@ -176,8 +176,17 @@
       return parts;
     }
 
+    function parseOptionalTriple(input, label) {
+      return input.value.trim() ? parseTriple(input.value, label) : null;
+    }
+
     function formatTriple(value, fallback = [0, 0, 0]) {
       return (Array.isArray(value) && value.length === 3 ? value : fallback).join(", ");
+    }
+
+    function jointName(component) {
+      const fallback = `${component.parent_frame || "base_link"}__${component.instance_id}_joint`;
+      return component.joint?.name || fallback.replace(/[^A-Za-z0-9_]+/g, "_");
     }
 
     function escapeHtml(value) {
@@ -209,7 +218,7 @@
               <label>实际尺寸（mm，长宽高）<input name="dimensions_mm" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.dimensions_mm" value="${escapeHtml(formatTriple(override.dimensions_mm, []))}" placeholder="80, 60, 25" /></label>
               <label>实际质量（g）<input name="mass_g" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.mass_g" type="number" min="0.001" step="any" value="${escapeHtml(override.mass_g ?? "")}" /></label>
               <label>CAD 检索词<input name="cad_query" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.cad_query" value="${escapeHtml(override.cad_query)}" /></label>
-              <label>CAD 来源 URL<input name="cad_source_url" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.cad_source_url" type="url" value="${escapeHtml(override.cad_source_url)}" /></label>
+              <label>CAD 来源 URL<input name="cad_source_url" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.cad_source_url" type="text" value="${escapeHtml(override.cad_source_url)}" /></label>
               <label>STEP 路径<input name="step_path" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.step_path" value="${escapeHtml(override.step_path)}" /></label>
               <label>Mesh 路径<input name="mesh_path" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.mesh_path" value="${escapeHtml(override.mesh_path)}" /></label>
             </fieldset>
@@ -229,8 +238,8 @@
           <form data-kind="pose" data-instance="${escapeHtml(component.instance_id)}">
             <fieldset class="form-grid">
               <label>父级坐标系<input name="parent_frame" data-instance="${escapeHtml(component.instance_id)}" data-field="parent_frame" value="${escapeHtml(component.parent_frame || "base_link")}" /></label>
-              <label>安装位置（mm）<input name="position_mm" data-instance="${escapeHtml(component.instance_id)}" data-field="position_mm" value="${escapeHtml(formatTriple(component.position_mm))}" /></label>
-              <label>安装旋转 RPY（度）<input name="rotation_rpy_deg" data-instance="${escapeHtml(component.instance_id)}" data-field="rotation_rpy_deg" value="${escapeHtml(formatTriple(component.rotation_rpy_deg))}" /></label>
+              <label>安装位置（mm）<input name="position_mm" data-instance="${escapeHtml(component.instance_id)}" data-field="position_mm" value="${escapeHtml(formatTriple(component.position_mm, []))}" placeholder="留空表示未补录" /></label>
+              <label>安装旋转 RPY（度）<input name="rotation_rpy_deg" data-instance="${escapeHtml(component.instance_id)}" data-field="rotation_rpy_deg" value="${escapeHtml(formatTriple(component.rotation_rpy_deg, []))}" placeholder="留空表示未补录" /></label>
               <label>启用关节<select name="joint.enabled"><option value="false"${component.joint ? "" : " selected"}>否</option><option value="true"${component.joint ? " selected" : ""}>是</option></select></label>
             </fieldset>
             <fieldset class="form-grid joint-fields"${component.joint ? "" : " hidden"}>
@@ -301,8 +310,8 @@
       const component = findComponent(form);
       try {
         component.parent_frame = form.elements.parent_frame.value || "base_link";
-        component.position_mm = parseTriple(form.elements.position_mm.value, "安装位置");
-        component.rotation_rpy_deg = parseTriple(form.elements.rotation_rpy_deg.value, "安装旋转");
+        component.position_mm = parseOptionalTriple(form.elements.position_mm, "安装位置");
+        component.rotation_rpy_deg = parseOptionalTriple(form.elements.rotation_rpy_deg, "安装旋转");
       } catch (error) {
         const field = error.message.startsWith("安装位置") ? "position_mm" : "rotation_rpy_deg";
         form.elements[field].classList.add("invalid");
@@ -310,14 +319,21 @@
         return false;
       }
       if (form.elements["joint.enabled"].value === "true") {
-        const axis = parseTriple(form.elements["joint.axis"].value, "关节轴");
-        if (axis.every(value => value === 0)) {
+        try {
+          const axis = parseTriple(form.elements["joint.axis"].value, "关节轴");
+          if (axis.every(value => value === 0)) throw new Error("关节轴不能为 (0, 0, 0)");
+          component.joint = {
+            ...(component.joint || {}),
+            name: jointName(component),
+            type: form.elements["joint.type"].value,
+            axis,
+          };
+        } catch (error) {
           form.elements["joint.axis"].classList.add("invalid");
-          $("[data-form-error]", form).textContent = "关节轴不能为 (0, 0, 0)，已清空关节工程事实";
+          $("[data-form-error]", form).textContent = `${error.message}，已清空关节工程事实`;
           component.joint = null;
-          return true;
+          return false;
         }
-        component.joint = { type: form.elements["joint.type"].value, axis };
       } else {
         component.joint = null;
       }
