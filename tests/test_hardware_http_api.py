@@ -154,11 +154,16 @@ def test_dual_track_links_and_export_contract_are_present():
 
 def test_export_downloads_stay_enabled_and_revoke_previous_blob_urls():
     html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
-    # 功耗/端口校验失败只提示，不得禁用或隐藏下载区。
+    # 功耗/端口校验失败只提示，不得禁用或隐藏下载区；校验不可用时同样只降级为警告。
     assert (
         '    function renderValidationWarning(validation) {\n'
         '      const warning = $("#validation-warning");\n'
-        '      const issues = (validation?.issues || []).filter(issue => issue.level !== "suggestion");\n'
+        '      warning.hidden = false;\n'
+        '      if (!validation) {\n'
+        '        warning.textContent = "工程校验未完成（校验接口不可用），不影响本次导出与下载";\n'
+        '        return;\n'
+        '      }\n'
+        '      const issues = (validation.issues || []).filter(issue => issue.level !== "suggestion");\n'
         '      warning.hidden = issues.length === 0;\n'
         '      warning.textContent = issues.length\n'
         '        ? `工程校验提示（不阻止下载）：${issues.map(issue => issue.message).join("；")}`\n'
@@ -182,18 +187,108 @@ def test_export_downloads_stay_enabled_and_revoke_previous_blob_urls():
     assert '      $("#provisional-warning").hidden = !exported.provisional;\n' in html
 
 
+def test_validation_failure_cannot_block_successful_design_export():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    # 两个请求仍并发启动，但 validate 的网络、JSON 与 ok 失败都在自身 promise 内降级为 null。
+    assert (
+        '      const validationPromise = fetch("/api/assembly/validate", {\n'
+        '        method: "POST",\n'
+        '        headers: {"Content-Type": "application/json"},\n'
+        '        body: JSON.stringify({assembly: state.assembly}),\n'
+        '      })\n'
+        '        .then(response => response.json())\n'
+        '        .then(data => (data.ok ? data.validation : null))\n'
+        '        .catch(() => null);\n'
+    ) in html
+    assert (
+        '      const exportPromise = fetch("/api/assembly/design-export", {\n'
+        '        method: "POST",\n'
+        '        headers: {"Content-Type": "application/json"},\n'
+        '        body: JSON.stringify({robot_name: state.name, assembly: state.assembly}),\n'
+        '      })\n'
+        '        .then(response => response.json())\n'
+        '        .catch(error => ({ ok: false, reason: error.message }));\n'
+    ) in html
+    assert (
+        '      const [validation, exported] = await Promise.all([validationPromise, exportPromise]);\n'
+    ) in html
+
+
+def test_invalid_forms_clear_downloads_and_skip_export():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    # 表单未通过时必须在任何 fetch 之前退出，避免下载文件与页面表单不一致。
+    assert (
+        '      resetExportView();\n'
+        '      if (!applyAllForms()) throw new Error("请先修正红框标出的工程参数，再导出工程包");\n'
+    ) in html
+    assert (
+        '    function clearDownloads() {\n'
+        '      revokeDownloads();\n'
+        '      $("#download-manifest").removeAttribute("href");\n'
+        '      $("#download-urdf").removeAttribute("href");\n'
+        '      $("#download-actions").hidden = true;\n'
+        '    }\n'
+    ) in html
+    assert '    function resetExportView() {\n      clearDownloads();\n' in html
+    # 导出失败也要清掉旧下载，否则用户会下到上一轮的 manifest 与 URDF。
+    assert (
+        '      } catch (error) {\n'
+        '        clearDownloads();\n'
+        '        $("#export-message").className = "message error";\n'
+        '        $("#export-message").textContent = error.message;\n'
+    ) in html
+
+
+def test_ready_write_back_is_draft_only_and_reported_separately():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    # 点击导出不得更新护照硬件，机器人来源只在显式保存按钮写回。
+    assert (
+        '      if (manifest.status === "ready" && !state.robotId) await writeBackReadyStatus();\n'
+    ) in html
+    # 导出成功提示先落定，回写结果只写独立元素，失败不覆盖「工程包已生成，可下载」。
+    assert (
+        '      $("#export-message").className = "message success";\n'
+        '      $("#export-message").textContent = "工程包已生成，可下载。";\n'
+    ) in html
+    assert (
+        '    async function writeBackReadyStatus() {\n'
+        '      const message = $("#status-message");\n'
+        '      message.hidden = false;\n'
+        '      try {\n'
+        '        await saveEngineering("ready");\n'
+        '        message.className = "message success";\n'
+        '        message.textContent = "草稿工程状态已回写为 ready。";\n'
+        '      } catch (error) {\n'
+        '        message.className = "message error";\n'
+        '        message.textContent = `草稿状态回写失败：${error.message}；工程包仍可下载。`;\n'
+        '      }\n'
+        '    }\n'
+    ) in html
+    assert 'id="status-message"' in html
+
+
 def test_export_ready_promotes_design_status_and_keeps_track_identity():
     root = Path("src/desktop_robot/studio/static")
     design = (root / "design.html").read_text(encoding="utf-8")
     index = (root / "index.html").read_text(encoding="utf-8")
     robot = (root / "robot.html").read_text(encoding="utf-8")
-    assert 'async function saveEngineering(designStatus = "provisional") {' in design
+    # 手动保存跟随当前 manifest 状态，不得把已 ready 的草稿写回 provisional。
+    assert "async function saveEngineering(designStatus = currentDesignStatus()) {" in design
     assert "        design_status: designStatus,\n" in design
-    assert '      if (manifest.status === "ready") await saveEngineering("ready");\n' in design
-    # 切回形象轨必须带上草稿标识，否则会丢掉当前草稿并落回选轨首屏。
+    assert (
+        '    function currentDesignStatus() {\n'
+        '      const status = state.manifest?.status || state.designStatus;\n'
+        '      return status === "ready" ? "ready" : "provisional";\n'
+        '    }\n'
+    ) in design
+    assert '      state.designStatus = data.data.design_status || state.designStatus;\n' in design
+    assert "      state.designStatus = designStatus;\n" in design
+    # 切回形象轨必须带上 draft 或 robot 标识，否则会丢掉当前来源并落回选轨首屏。
     assert (
         '    function studioHref() {\n'
-        '      return state.draftId ? `/?draft=${encodeURIComponent(state.draftId)}` : "/?track=studio";\n'
+        '      if (state.draftId) return `/?draft=${encodeURIComponent(state.draftId)}`;\n'
+        '      if (state.robotId) return `/robot.html?id=${encodeURIComponent(state.robotId)}`;\n'
+        '      return "/?track=studio";\n'
         '    }\n'
     ) in design
     assert '$("#studio-link").href = studioHref();' in design

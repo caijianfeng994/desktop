@@ -93,6 +93,7 @@
       <div class="panel">
         <button class="primary" id="export-design" type="button">导出工程交接</button>
         <p id="export-message" class="message" aria-live="polite"></p>
+        <p id="status-message" class="message" aria-live="polite" hidden></p>
         <p id="export-status" class="message" hidden></p>
         <p id="provisional-warning" class="message warning" hidden>provisional，不可当作生产或仿真精确 URDF</p>
         <p id="validation-warning" class="message warning" hidden></p>
@@ -121,6 +122,7 @@
       manifest: null,
       urdf: "",
       downloadUrls: [],
+      designStatus: "provisional",
     };
     const $ = (selector, element = document) => element.querySelector(selector);
     const $$ = (selector, element = document) => [...element.querySelectorAll(selector)];
@@ -170,6 +172,7 @@
         if (!data.ok) throw new Error(data.reason);
         state.assembly = data.data.assembly;
         state.name = data.data.name || state.name;
+        state.designStatus = data.data.design_status || state.designStatus;
       } else if (state.robotId) {
         const data = await fetchJson(`/api/robot/${encodeURIComponent(state.robotId)}`);
         if (!data.ok || !data.passport.hardware) {
@@ -361,12 +364,32 @@
     }
 
     function studioHref() {
-      return state.draftId ? `/?draft=${encodeURIComponent(state.draftId)}` : "/?track=studio";
+      if (state.draftId) return `/?draft=${encodeURIComponent(state.draftId)}`;
+      if (state.robotId) return `/robot.html?id=${encodeURIComponent(state.robotId)}`;
+      return "/?track=studio";
+    }
+
+    function currentDesignStatus() {
+      const status = state.manifest?.status || state.designStatus;
+      return status === "ready" ? "ready" : "provisional";
     }
 
     function revokeDownloads() {
       state.downloadUrls.forEach(url => URL.revokeObjectURL(url));
       state.downloadUrls = [];
+    }
+
+    function clearDownloads() {
+      revokeDownloads();
+      $("#download-manifest").removeAttribute("href");
+      $("#download-urdf").removeAttribute("href");
+      $("#download-actions").hidden = true;
+    }
+
+    function resetExportView() {
+      clearDownloads();
+      ["#status-message", "#export-status", "#provisional-warning", "#validation-warning", "#missing-list"]
+        .forEach(selector => { $(selector).hidden = true; });
     }
 
     function bindDownload(anchor, text, type) {
@@ -377,7 +400,12 @@
 
     function renderValidationWarning(validation) {
       const warning = $("#validation-warning");
-      const issues = (validation?.issues || []).filter(issue => issue.level !== "suggestion");
+      warning.hidden = false;
+      if (!validation) {
+        warning.textContent = "工程校验未完成（校验接口不可用），不影响本次导出与下载";
+        return;
+      }
+      const issues = (validation.issues || []).filter(issue => issue.level !== "suggestion");
       warning.hidden = issues.length === 0;
       warning.textContent = issues.length
         ? `工程校验提示（不阻止下载）：${issues.map(issue => issue.message).join("；")}`
@@ -403,30 +431,52 @@
       $("#download-actions").hidden = false;
     }
 
+    async function writeBackReadyStatus() {
+      const message = $("#status-message");
+      message.hidden = false;
+      try {
+        await saveEngineering("ready");
+        message.className = "message success";
+        message.textContent = "草稿工程状态已回写为 ready。";
+      } catch (error) {
+        message.className = "message error";
+        message.textContent = `草稿状态回写失败：${error.message}；工程包仍可下载。`;
+      }
+    }
+
     async function runChecks() {
-      applyAllForms();
-      const [validation, exported] = await Promise.all([
-        fetch("/api/assembly/validate", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({assembly: state.assembly}),
-        }).then(r => r.json()),
-        fetch("/api/assembly/design-export", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({robot_name: state.name, assembly: state.assembly}),
-        }).then(r => r.json()),
-      ]);
+      resetExportView();
+      if (!applyAllForms()) throw new Error("请先修正红框标出的工程参数，再导出工程包");
+      // 两个请求并发启动；校验失败只降级为警告，绝不牵连已成功的导出。
+      const validationPromise = fetch("/api/assembly/validate", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({assembly: state.assembly}),
+      })
+        .then(response => response.json())
+        .then(data => (data.ok ? data.validation : null))
+        .catch(() => null);
+      const exportPromise = fetch("/api/assembly/design-export", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({robot_name: state.name, assembly: state.assembly}),
+      })
+        .then(response => response.json())
+        .catch(error => ({ ok: false, reason: error.message }));
+      const [validation, exported] = await Promise.all([validationPromise, exportPromise]);
       if (!exported.ok) throw new Error(exported.reason || "工程导出失败");
       const manifest = exported.manifest;
       state.manifest = manifest;
       state.urdf = exported.urdf;
-      renderValidationWarning(validation.validation);
+      renderValidationWarning(validation);
       renderExport(exported);
-      if (manifest.status === "ready") await saveEngineering("ready");
+      $("#export-message").className = "message success";
+      $("#export-message").textContent = "工程包已生成，可下载。";
+      // 护照硬件只在显式保存按钮写回，导出不得改动机器人。
+      if (manifest.status === "ready" && !state.robotId) await writeBackReadyStatus();
     }
 
-    async function saveEngineering(designStatus = "provisional") {
+    async function saveEngineering(designStatus = currentDesignStatus()) {
       applyAllForms();
       const designPayload = {
         assembly: state.assembly,
@@ -448,6 +498,7 @@
         state.draftId = data.draft_id;
         history.replaceState(null, "", `/design.html?draft=${encodeURIComponent(state.draftId)}`);
       }
+      state.designStatus = designStatus;
       $("#studio-link").href = studioHref();
       $("#save-message").className = "message success";
       $("#save-message").textContent = `工程事实已保存，当前状态为 ${designStatus}。`;
@@ -498,9 +549,8 @@
       $("#export-message").textContent = "正在检查并导出……";
       try {
         await runChecks();
-        $("#export-message").className = "message success";
-        $("#export-message").textContent = "已生成 manifest 与 URDF，可直接下载。";
       } catch (error) {
+        clearDownloads();
         $("#export-message").className = "message error";
         $("#export-message").textContent = error.message;
       } finally {
