@@ -55,9 +55,11 @@ Skill 目录：`skills/image-to-3d/`（含 `SKILL.md`、scripts、references）�
 
 ## 工程设计（CAD / URDF / 制造）
 
-项目内置 `skills/desktop-robot-design/` 编排技能，把 Studio 装配数据交给
-text-to-cad 工具链。GLB 继续负责机器人形象；CAD、URDF 与 SDF 负责真实尺寸、
-运动学、仿真和制造。
+当前 Studio 产品能力仅补录工程字段，并导出设计 manifest 与
+provisional / `ready` URDF。`skills/desktop-robot-design/` 描述的是 Agent
+可编排的后续工具链（step-parts、CAD、DfAM、CAD Viewer 等），不代表首版
+Studio 会自动调用这些步骤。GLB 继续负责机器人形象；CAD、URDF 与 SDF
+负责真实尺寸、运动学、仿真和制造。
 
 ```bash
 .venv/bin/pip install -e ".[design]"
@@ -76,9 +78,10 @@ text-to-cad 工具链。GLB 继续负责机器人形象；CAD、URDF 与 SDF 负
 }
 ```
 
-响应包含工程数据缺失清单、设计 manifest 和带设计台账的 provisional URDF。
-Studio 的 `x/y` 百分比只用于界面排版；真实模型必须填写 `position_mm`、
-`rotation_rpy_deg`、`physical_override` 和可选 `joint`。
+响应包含工程数据缺失清单、设计 manifest 和带设计台账的 URDF。
+Studio 的 `x/y` 百分比只用于界面排版。缺项允许 provisional 导出；要达到
+当前 `ready`，需尺寸、质量、毫米位姿（`position_mm`、`rotation_rpy_deg`）齐全。
+`physical_override` 仅在实例值不同于 catalog 默认时需要；`joint` 仍为可选。
 
 ## 假 Body 对话
 
