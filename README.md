@@ -61,6 +61,10 @@ provisional / `ready` URDF。`skills/desktop-robot-design/` 描述的是 Agent
 Studio 会自动调用这些步骤。GLB 继续负责机器人形象；CAD、URDF 与 SDF
 负责真实尺寸、运动学、仿真和制造。
 
+下面两条命令仅用于 Agent 后续的 CAD / Viewer 工具链，不是
+`python -m desktop_robot.studio`、工程轨或 `/api/assembly/design-export`
+的前置依赖：
+
 ```bash
 .venv/bin/pip install -e ".[design]"
 .venv/bin/python -m playwright install chromium  # CAD/URDF 快照与 Viewer 首次使用
@@ -80,7 +84,8 @@ Studio 会自动调用这些步骤。GLB 继续负责机器人形象；CAD、URD
 
 响应包含工程数据缺失清单、设计 manifest 和带设计台账的 URDF。
 Studio 的 `x/y` 百分比只用于界面排版。缺项允许 provisional 导出；要达到
-当前 `ready`，需尺寸、质量、毫米位姿（`position_mm`、`rotation_rpy_deg`）齐全。
+当前 `ready`，需尺寸（`dimensions_mm`）、质量（`mass_g`）与 `position_mm` 齐全。
+`rotation_rpy_deg` 缺省时按零姿态导出，不计入当前 `ready` 的缺失项。
 `physical_override` 仅在实例值不同于 catalog 默认时需要；`joint` 仍为可选。
 
 ## 假 Body 对话
