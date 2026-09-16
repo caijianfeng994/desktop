@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>和你的机器人聊天</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #141e2e;
+      --text: #eef3fa;
+      --muted: #8fa3bf;
+      --accent: #4aa3f0;
+      --bubble-user: #243552;
+      --bubble-bot: #1c3d4a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "SF Pro Text", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 500px at 80% 0%, #1a3a5c 0%, transparent 55%),
+        radial-gradient(700px 400px at 10% 100%, #1a2f28 0%, transparent 50%),
+        var(--bg);
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2rem;
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 800px) {
+      .wrap {
+        grid-template-columns: minmax(360px, 1fr) minmax(320px, 1fr);
+        align-items: stretch;
+        min-height: calc(100vh - 2rem);
+      }
+    }
+    .top {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+    .top a { color: var(--muted); text-decoration: none; }
+    .top a:hover { color: var(--accent); }
+    .top-actions { display: flex; align-items: center; gap: 0.65rem; }
+    .publish-btn {
+      border: 1px solid #47d7ad;
+      border-radius: 10px;
+      padding: 0.58rem 0.9rem;
+      background: #47d7ad;
+      color: #082019;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .publish-btn:disabled { cursor: wait; opacity: 0.7; }
+    .stage {
+      background: linear-gradient(165deg, #2a4258 0%, #1c2c3c 55%, #152230 100%);
+      border: 1px solid #2a3c55;
+      border-radius: 20px;
+      padding: 0.85rem 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+      min-height: min(72vh, 680px);
+      height: 100%;
+    }
+    .nameplate {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      letter-spacing: 0.02em;
+      position: relative;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-bottom: 0.25rem;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .skills {
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+      margin-top: 0.4rem;
+      max-width: 90%;
+      position: relative;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .rig-panel {
+      margin-top: 0.75rem;
+      width: 100%;
+      max-width: 420px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 12px;
+      padding: 0.55rem 0.75rem;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .rig-panel summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .rig-panel ol { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+    .rig-panel a { color: var(--accent); }
+    .rig-panel input[type="file"] { display: block; margin-top: 0.35rem; width: 100%; }
+    .rig-status { margin: 0.4rem 0 0; color: var(--text); }
+    #viewport {
+      width: 100%;
+      flex: 1 1 auto;
+      min-height: 280px;
+      border-radius: 14px;
+      touch-action: none;
+      cursor: grab;
+      position: relative;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+    }
+    #viewport:active { cursor: grabbing; }
+    #viewport canvas { display: block; width: 100% !important; height: 100% !important; border-radius: 14px; }
+    .bubble {
+      min-height: 48px;
+      max-width: min(280px, 92%);
+      margin: 0.45rem auto 0;
+      padding: 0.65rem 0.85rem;
+      background: rgba(28, 61, 74, 0.95);
+      border: 1px solid #2f6a7a;
+      border-radius: 14px;
+      color: #d7f3ff;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: .25s ease;
+      position: relative;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .bubble.show { opacity: 1; transform: translateY(0); }
+    .chat {
+      background: var(--panel);
+      border: 1px solid #2a3c55;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      min-height: min(72vh, 680px);
+      height: 100%;
+      overflow: hidden;
+    }
+    .log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    .msg {
+      max-width: 85%;
+      padding: 0.7rem 0.9rem;
+      border-radius: 14px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user { align-self: flex-end; background: var(--bubble-user); }
+    .msg.bot { align-self: flex-start; background: var(--bubble-bot); }
+    .msg.sys { align-self: center; color: var(--muted); font-size: 0.85rem; background: transparent; }
+    .composer {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.85rem;
+      border-top: 1px solid #2a3c55;
+    }
+    .composer input {
+      flex: 1;
+      border: 1px solid #2a3c55;
+      background: #0f1724;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 0.75rem 0.9rem;
+      font-size: 1rem;
+    }
+    .composer button {
+      border: 0;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      padding: 0 1.1rem;
+      cursor: pointer;
+    }
+    .composer button:disabled { opacity: 0.5; cursor: wait; }
+    .phase {
+      font-size: 0.75rem;
+      color: #9ec9e8;
+      margin: 0.15rem 0 0.35rem;
+      min-height: 1.1em;
+      z-index: 2;
+    }
+    .phase[data-phase="listening"] { color: #7dffa8; }
+    .phase[data-phase="thinking"] { color: #ffd27d; }
+    .phase[data-phase="speaking"] { color: #7dc8ff; }
+    #mic {
+      display: none;
+      border: 1px solid #2a3c55;
+      border-radius: 12px;
+      background: #1a2738;
+      color: var(--text);
+      font-weight: 600;
+      padding: 0 0.9rem;
+      cursor: pointer;
+    }
+    #mic.on { background: #3a1c28; border-color: #c45; color: #ffb4b4; }
+    #mic.show { display: inline-flex; align-items: center; }
+    #err { color: #ff8e8e; text-align: center; min-height: 1.2em; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <strong id="title">机器人</strong>
+        <div style="color:var(--muted);font-size:0.85rem;" id="subtitle">加载中…</div>
+      </div>
+      <div class="top-actions"><a id="design-link" href="/design.html">工程与制造</a><a href="/publish.html">发布大厅</a><button class="publish-btn" id="publish-btn" type="button">发布制作</button><a href="/">← 再养一只</a></div>
+    </div>
+
+    <section class="stage">
+      <div class="nameplate" id="nameplate">…</div>
+      <div class="hint">3D 模型 · 拖动旋转 · 听/说/看技能对齐 HF 陪伴交互</div>
+      <div class="phase" id="phase" data-phase="idle">状态：待机</div>
+      <div id="viewport"></div>
+      <div class="bubble" id="bubble"></div>
+      <div class="skills" id="skills"></div>
+      <div class="skills" id="hardware"></div>
+      <details class="rig-panel" id="rig-panel">
+        <summary>绑骨动画流水线（Trellis → 绑骨 → Three.js）</summary>
+        <p style="margin:0.5rem 0 0">
+          <button type="button" id="auto-rig-btn">后台自动绑骨（Make-It-Animatable）</button>
+        </p>
+        <ol>
+          <li>推荐：点上方按钮，后端调用 HF Space 自动绑骨（需 <code>HF_TOKEN</code>，约 2–10 分钟）</li>
+          <li>或手动：下载 <a id="dl-avatar" href="#">avatar.glb</a> →
+            <a href="https://www.mixamo.com/" target="_blank" rel="noopener">Mixamo</a>
+            Auto-Rigger → 导出 With Skin 含动画的 GLB</li>
+          <li>手动回传绑骨 GLB：
+            <input id="rig-file" type="file" accept=".glb,model/gltf-binary" />
+          </li>
+        </ol>
+        <p class="rig-status" id="rig-status"></p>
+      </details>
+    </section>
+
+    <section class="chat">
+      <div class="log" id="log"></div>
+      <div id="err"></div>
+      <form class="composer" id="form">
+        <input id="input" type="text" placeholder="跟它说点什么…" autocomplete="off" />
+        <button type="button" id="mic" title="语音输入">麦</button>
+        <button type="submit" id="send">发送</button>
+      </form>
+    </section>
+  </div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    const params = new URLSearchParams(location.search);
+    const robotId = params.get("id");
+    const bubbleEl = document.getElementById("bubble");
+    const logEl = document.getElementById("log");
+    const errEl = document.getElementById("err");
+    const inputEl = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+    const phaseEl = document.getElementById("phase");
+    const micBtn = document.getElementById("mic");
+    const publishBtn = document.getElementById("publish-btn");
+    let canChat = false;
+    let talking = false;
+    let caps = { listen: false, tts: false, see: false };
+    let phase = "idle";
+    let recognition = null;
+    let robotRoot = null;
+    let baseY = 0.35;
+    let emissiveMats = [];
+    let chestLight = null;
+    let eyeL = null;
+    let eyeR = null;
+    let mouthMesh = null;
+    let headG = null;
+    let armL = null;
+    let armR = null;
+    let clip = { name: "idle", t0: 0, dur: 0, face: "idle" };
+    let busy = false;
+    let idleTimer = null;
+    let idleTicks = 0;
+    const IDLE_GAP_MS = 8000;
+
+    function addMsg(role, text) {
+      const div = document.createElement("div");
+      div.className = "msg " + role;
+      div.textContent = text;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function showBubble(text) {
+      bubbleEl.textContent = text;
+      bubbleEl.classList.add("show");
+    }
+
+    function setPhase(next) {
+      phase = next || "idle";
+      const label = {
+        idle: "待机",
+        listening: "倾听中",
+        thinking: "思考中",
+        speaking: "说话中",
+      }[phase] || phase;
+      phaseEl.textContent = "状态：" + label;
+      phaseEl.dataset.phase = phase;
+    }
+
+    function speakText(text) {
+      if (!caps.tts || !text || !window.speechSynthesis) return;
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "zh-CN";
+        u.rate = 1.05;
+        window.speechSynthesis.speak(u);
+      } catch (_) { /* ignore */ }
+    }
+
+    function setTalking(on) {
+      talking = on;
+      if (on) busy = true;
+    }
+
+    function startClip(name, face) {
+      const dur = { wave: 1.6, nod: 1.2, hop: 0.95, look: 1.4, face: 1.1, idle: 0 }[name] || 1.1;
+      clip = { name: name || "idle", t0: performance.now(), dur: dur * 1000, face: face || "idle" };
+      // 真骨骼：按名字模糊匹配 clip
+      const actions = robotRoot && robotRoot.userData.actions;
+      const mixer = robotRoot && robotRoot.userData.mixer;
+      if (actions && mixer) {
+        const want = String(name || "idle").toLowerCase();
+        let hit = null;
+        for (const [k, act] of Object.entries(actions)) {
+          if (k.includes(want) || want.includes(k)) {
+            hit = act;
+            break;
+          }
+        }
+        if (!hit && want === "idle") {
+          hit = actions.idle || actions["armature|idle"] || Object.values(actions)[0];
+        }
+        for (const act of Object.values(actions)) {
+          if (act !== hit) act.fadeOut(0.2);
+        }
+        if (hit) {
+          hit.reset().setEffectiveWeight(1).fadeIn(0.15).play();
+          if (want !== "idle") hit.setLoop(THREE.LoopOnce, 1);
+          else hit.setLoop(THREE.LoopRepeat, Infinity);
+          hit.clampWhenFinished = true;
+        }
+      }
+    }
+
+    function clearPartRefs() {
+      headG = null;
+      armL = null;
+      armR = null;
+      eyeL = null;
+      eyeR = null;
+      mouthMesh = null;
+      chestLight = null;
+    }
+
+    function stopIdle() {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    }
+
+    function scheduleIdle() {
+      stopIdle();
+      if (!canChat) return;
+      idleTimer = setTimeout(runIdle, IDLE_GAP_MS);
+    }
+
+    async function runIdle() {
+      idleTimer = null;
+      if (!canChat || busy || document.hidden) {
+        scheduleIdle();
+        return;
+      }
+      idleTicks += 1;
+      const wantLine = idleTicks % 6 === 0;
+      try {
+        const res = await fetch("/api/idle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ robot_id: robotId, want_line: wantLine }),
+        });
+        const data = await res.json();
+        if (data.ok && !busy) {
+          startClip(data.perform || "idle", data.face || "idle");
+          if (data.line) {
+            addMsg("bot", data.line);
+            showBubble(data.line);
+            setTalking(true);
+            setTimeout(() => {
+              setTalking(false);
+              busy = false;
+            }, Math.max(1200, clip.dur || 800));
+          }
+        }
+      } catch (_) {
+        /* 空闲失败忽略 */
+      }
+      scheduleIdle();
+    }
+
+    function fitModel(root, targetSize = 2.4) {
+      root.scale.setScalar(1);
+      root.position.set(0, 0, 0);
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      const scale = targetSize / maxDim;
+      root.scale.setScalar(scale);
+      // 脚底落在 y=0，水平居中
+      root.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale);
+      root.userData.baseScale = scale;
+      baseY = root.position.y;
+      return root;
+    }
+
+    function centerGeometricRobot(root) {
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      const center = box.getCenter(new THREE.Vector3());
+      root.position.x -= center.x;
+      root.position.z -= center.z;
+      root.position.y -= box.min.y;
+      root.userData.baseScale = root.scale.x || 1;
+      baseY = root.position.y;
+    }
+
+    function collectEmissive(root) {
+      const mats = [];
+      root.traverse((obj) => {
+        if (!obj.isMesh) return;
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+        const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (const m of list) {
+          if (!m) continue;
+          if (m.emissive && m.emissiveIntensity != null) {
+            m.userData.baseEmissive = m.emissiveIntensity;
+            mats.push(m);
+          }
+        }
+      });
+      return mats;
+    }
+
+    function buildRobot() {
+      const root = new THREE.Group();
+      const white = new THREE.MeshStandardMaterial({
+        color: 0xf4f8fc,
+        metalness: 0.25,
+        roughness: 0.35,
+      });
+      const dark = new THREE.MeshStandardMaterial({
+        color: 0x2a3548,
+        metalness: 0.4,
+        roughness: 0.45,
+      });
+      const cyan = new THREE.MeshStandardMaterial({
+        color: 0x4fd2ff,
+        emissive: 0x1aa8d8,
+        emissiveIntensity: 0.85,
+        metalness: 0.2,
+        roughness: 0.3,
+      });
+
+      const head = new THREE.Group();
+      head.position.y = 1.55;
+      const headBox = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.95, 0.95), white);
+      headBox.castShadow = true;
+      head.add(headBox);
+
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.38, 0.12), dark);
+      visor.position.set(0, 0.03, 0.48);
+      head.add(visor);
+
+      eyeL = new THREE.Mesh(new THREE.CircleGeometry(0.09, 24), cyan);
+      eyeR = eyeL.clone();
+      eyeL.position.set(-0.2, 0.03, 0.55);
+      eyeR.position.set(0.2, 0.03, 0.55);
+      head.add(eyeL, eyeR);
+
+      mouthMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.04), dark);
+      mouthMesh.position.set(0, -0.23, 0.5);
+      head.add(mouthMesh);
+
+      for (const x of [-0.62, 0.62]) {
+        const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.12, 24), cyan);
+        ear.rotation.z = Math.PI / 2;
+        ear.position.set(x, 0, 0);
+        head.add(ear);
+      }
+      headG = head;
+      root.add(head);
+
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.18, 16), dark);
+      neck.position.y = 1.05;
+      root.add(neck);
+
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.1, 0.7), white);
+      torso.position.y = 0.45;
+      torso.castShadow = true;
+      root.add(torso);
+
+      chestLight = new THREE.Mesh(new THREE.CircleGeometry(0.22, 32), cyan);
+      chestLight.position.set(0, 0.5, 0.36);
+      root.add(chestLight);
+
+      const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.2, 16), dark);
+      waist.position.y = -0.15;
+      root.add(waist);
+
+      function arm(side) {
+        const g = new THREE.Group();
+        g.position.set(side * 0.62, 0.85, 0);
+        const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 16), cyan);
+        g.add(shoulder);
+        const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.35, 6, 12), white);
+        upper.position.set(side * 0.16, -0.35, 0);
+        g.add(upper);
+        const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), dark);
+        elbow.position.set(side * 0.2, -0.63, 0);
+        g.add(elbow);
+        const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.28, 6, 12), white);
+        lower.position.set(side * 0.24, -0.9, 0.05);
+        g.add(lower);
+        const hand = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.12), dark);
+        hand.position.set(side * 0.26, -1.17, 0.05);
+        g.add(hand);
+        return g;
+      }
+      armL = arm(-1);
+      armR = arm(1);
+      root.add(armL, armR);
+
+      function leg(side) {
+        const g = new THREE.Group();
+        const hip = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), cyan);
+        hip.position.set(side * 0.28, -0.28, 0);
+        g.add(hip);
+        const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.32, 6, 12), white);
+        thigh.position.set(side * 0.3, -0.6, 0);
+        g.add(thigh);
+        const knee = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), dark);
+        knee.position.set(side * 0.3, -0.88, 0);
+        g.add(knee);
+        const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.28, 6, 12), white);
+        shin.position.set(side * 0.3, -1.15, 0);
+        g.add(shin);
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.45), white);
+        foot.position.set(side * 0.3, -1.4, 0.08);
+        g.add(foot);
+        const toe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.06, 0.12), cyan);
+        toe.position.set(side * 0.3, -1.32, 0.28);
+        g.add(toe);
+        return g;
+      }
+      root.add(leg(-1), leg(1));
+
+      root.position.set(0, 0, 0);
+      centerGeometricRobot(root);
+      return root;
+    }
+
+    function _triCentroid(a, b, c) {
+      return new THREE.Vector3(
+        (a.x + b.x + c.x) / 3,
+        (a.y + b.y + c.y) / 3,
+        (a.z + b.z + c.z) / 3
+      );
+    }
+
+    function _classifyHumanoid(p, box) {
+      const sx = Math.max(box.max.x - box.min.x, 1e-6);
+      const sy = Math.max(box.max.y - box.min.y, 1e-6);
+      const nx = (p.x - box.min.x) / sx;
+      const ny = (p.y - box.min.y) / sy;
+      // 先判手臂（含举手）：左右侧柱，避免抬起的手被当成头
+      if (ny > 0.26) {
+        if (nx < 0.36) return "armL";
+        if (nx > 0.64) return "armR";
+      }
+      if (ny > 0.68) return "head";
+      return "body";
+    }
+
+    function _meshFromTris(tris, material) {
+      const positions = new Float32Array(tris.length * 9);
+      for (let i = 0; i < tris.length; i++) {
+        const t = tris[i];
+        const o = i * 9;
+        positions[o] = t.a.x; positions[o + 1] = t.a.y; positions[o + 2] = t.a.z;
+        positions[o + 3] = t.b.x; positions[o + 4] = t.b.y; positions[o + 5] = t.b.z;
+        positions[o + 6] = t.c.x; positions[o + 7] = t.c.y; positions[o + 8] = t.c.z;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geom.computeVertexNormals();
+      const mat = material
+        ? (Array.isArray(material) ? material[0].clone() : material.clone())
+        : new THREE.MeshStandardMaterial({ color: 0xf4f8fc, metalness: 0.2, roughness: 0.4 });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    /** 把无骨骼静态 GLB 切成头/双臂/躯干，挂到关节枢轴上，便于分部位动画。 */
+    function buildFakeRigFromStatic(source) {
+      source.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(source);
+      const size = box.getSize(new THREE.Vector3());
+      if (size.y < 1e-3) return null;
+
+      const buckets = { head: [], armL: [], armR: [], body: [] };
+      let fallbackMat = null;
+      const va = new THREE.Vector3();
+      const vb = new THREE.Vector3();
+      const vc = new THREE.Vector3();
+
+      source.traverse((obj) => {
+        if (!obj.isMesh || !obj.geometry) return;
+        const geom = obj.geometry;
+        const pos = geom.attributes.position;
+        if (!pos) return;
+        fallbackMat = fallbackMat || obj.material;
+        const index = geom.index;
+        const pushTri = (ia, ib, ic) => {
+          va.fromBufferAttribute(pos, ia).applyMatrix4(obj.matrixWorld);
+          vb.fromBufferAttribute(pos, ib).applyMatrix4(obj.matrixWorld);
+          vc.fromBufferAttribute(pos, ic).applyMatrix4(obj.matrixWorld);
+          const c = _triCentroid(va, vb, vc);
+          const key = _classifyHumanoid(c, box);
+          buckets[key].push({
+            a: va.clone(),
+            b: vb.clone(),
+            c: vc.clone(),
+            material: obj.material,
+          });
+        };
+        if (index) {
+          for (let i = 0; i < index.count; i += 3) {
+            pushTri(index.getX(i), index.getX(i + 1), index.getX(i + 2));
+          }
+        } else {
+          for (let i = 0; i + 2 < pos.count; i += 3) {
+            pushTri(i, i + 1, i + 2);
+          }
+        }
+      });
+
+      const total =
+        buckets.head.length + buckets.body.length + buckets.armL.length + buckets.armR.length;
+      const minArm = Math.max(8, Math.floor(total * 0.008));
+      if (buckets.armL.length < minArm || buckets.armR.length < minArm || buckets.head.length < 8) {
+        console.warn("[fakeRig] split failed", {
+          head: buckets.head.length,
+          armL: buckets.armL.length,
+          armR: buckets.armR.length,
+          body: buckets.body.length,
+          minArm,
+        });
+        return null;
+      }
+      console.info("[fakeRig] ok", {
+        head: buckets.head.length,
+        armL: buckets.armL.length,
+        armR: buckets.armR.length,
+        body: buckets.body.length,
+      });
+
+      const puppet = new THREE.Group();
+      puppet.userData.fakeRig = true;
+
+      const bodyMesh = _meshFromTris(buckets.body, buckets.body[0]?.material || fallbackMat);
+      const bodyG = new THREE.Group();
+      bodyG.add(bodyMesh);
+      puppet.add(bodyG);
+
+      const neck = new THREE.Vector3(
+        (box.min.x + box.max.x) / 2,
+        box.min.y + size.y * 0.68,
+        (box.min.z + box.max.z) / 2
+      );
+      const shoulderL = new THREE.Vector3(
+        box.min.x + size.x * 0.28,
+        box.min.y + size.y * 0.62,
+        (box.min.z + box.max.z) / 2
+      );
+      const shoulderR = new THREE.Vector3(
+        box.min.x + size.x * 0.72,
+        box.min.y + size.y * 0.62,
+        (box.min.z + box.max.z) / 2
+      );
+
+      function partGroup(tris, pivot) {
+        const g = new THREE.Group();
+        g.position.copy(pivot);
+        if (!tris.length) return g;
+        const mesh = _meshFromTris(tris, tris[0].material || fallbackMat);
+        mesh.position.set(-pivot.x, -pivot.y, -pivot.z);
+        g.add(mesh);
+        return g;
+      }
+
+      headG = partGroup(buckets.head, neck);
+      armL = partGroup(buckets.armL, shoulderL);
+      armR = partGroup(buckets.armR, shoulderR);
+      puppet.add(headG, armL, armR);
+
+      // 脚底贴地、水平居中（源 mesh 已是 fitModel 后的世界坐标）
+      puppet.updateMatrixWorld(true);
+      const pbox = new THREE.Box3().setFromObject(puppet);
+      puppet.position.x -= (pbox.min.x + pbox.max.x) / 2;
+      puppet.position.z -= (pbox.min.z + pbox.max.z) / 2;
+      puppet.position.y -= pbox.min.y;
+      baseY = puppet.position.y;
+      return puppet;
+    }
+
+    async function loadGlbRobot(scene, url) {
+      clearPartRefs();
+      const loader = new GLTFLoader();
+      const gltf = await loader.loadAsync(url);
+      const raw = gltf.scene;
+      fitModel(raw);
+
+      // 1) 真骨骼 + 动画片段
+      let skinned = false;
+      raw.traverse((o) => {
+        if (o.isSkinnedMesh) skinned = true;
+      });
+      if (skinned) {
+        emissiveMats = collectEmissive(raw);
+        scene.add(raw);
+        robotRoot = raw;
+        robotRoot.userData.motionMode = "skinned";
+        if (gltf.animations && gltf.animations.length) {
+          robotRoot.userData.mixer = new THREE.AnimationMixer(raw);
+          robotRoot.userData.actions = {};
+          for (const clipAnim of gltf.animations) {
+            const key = clipAnim.name.toLowerCase();
+            robotRoot.userData.actions[key] = robotRoot.userData.mixer.clipAction(clipAnim);
+          }
+          startClip("idle", "idle");
+        }
+        return raw;
+      }
+
+      // 2) 静态 Trellis GLB：保留完整外观（三角面切分会碎模）。
+      //    完整关节动画：装配时不传图用几何体，或换带 skins+clips 的 GLB（Mixamo 等）。
+      emissiveMats = collectEmissive(raw);
+      scene.add(raw);
+      robotRoot = raw;
+      robotRoot.userData.motionMode = "whole";
+      return raw;
+    }
+
+    async function initViewer(appearanceKind) {
+      const host = document.getElementById("viewport");
+      const scene = new THREE.Scene();
+      scene.background = null;
+
+      const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+      camera.position.set(0, 1.35, 5.2);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x000000, 0);
+      renderer.shadowMap.enabled = true;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.45;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      host.appendChild(renderer.domElement);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+      scene.add(ambient);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x4a6078, 1.8);
+      scene.add(hemi);
+      const key = new THREE.DirectionalLight(0xffffff, 2.2);
+      key.position.set(2.5, 5.5, 3.5);
+      key.castShadow = true;
+      scene.add(key);
+      const fill = new THREE.DirectionalLight(0xb8e8ff, 1.4);
+      fill.position.set(-4, 3, 1);
+      scene.add(fill);
+      const rim = new THREE.DirectionalLight(0x7ec8ff, 0.9);
+      rim.position.set(0, 2, -4);
+      scene.add(rim);
+      const front = new THREE.PointLight(0xffffff, 1.1, 12);
+      front.position.set(0, 1.2, 3.2);
+      scene.add(front);
+
+      const ground = new THREE.Mesh(
+        new THREE.CircleGeometry(2.4, 48),
+        new THREE.ShadowMaterial({ opacity: 0.18 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = 0;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      if (appearanceKind === "glb") {
+        try {
+          await loadGlbRobot(scene, "/api/robot/" + robotId + "/avatar.glb");
+        } catch (e) {
+          errEl.textContent = "3D 模型加载失败，已改用关节几何体";
+          console.error(e);
+          clearPartRefs();
+          robotRoot = buildRobot();
+          robotRoot.userData.motionMode = "geometric";
+          scene.add(robotRoot);
+        }
+      } else {
+        clearPartRefs();
+        robotRoot = buildRobot();
+        robotRoot.userData.motionMode = "geometric";
+        scene.add(robotRoot);
+      }
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.minDistance = 1.5;
+      controls.maxDistance = 12;
+      controls.target.set(0, 1.2, 0);
+      controls.maxPolarAngle = Math.PI * 0.85;
+      controls.update();
+
+      function frameRobot(resetOrbit) {
+        if (!robotRoot) return;
+        robotRoot.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(robotRoot);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const w = host.clientWidth || 300;
+        const h = host.clientHeight || 280;
+        const aspect = Math.max(w / h, 0.2);
+        const fov = camera.fov * (Math.PI / 180);
+        const fitH = (size.y * 0.55) / Math.tan(fov / 2);
+        const fitW = (size.x * 0.55) / (Math.tan(fov / 2) * aspect);
+        let dist = Math.max(fitH, fitW, 2.2) * 1.25;
+        // 视口越矮，略拉远，避免裁脚
+        if (aspect > 1.15) dist *= 1.05;
+        else dist *= 1.12;
+
+        controls.target.set(center.x, center.y, center.z);
+        if (resetOrbit) {
+          camera.position.set(center.x, center.y + size.y * 0.08, center.z + dist);
+        } else {
+          const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+          if (offset.lengthSq() < 1e-6) offset.set(0, size.y * 0.08, dist);
+          offset.setLength(dist);
+          camera.position.copy(controls.target).add(offset);
+        }
+        controls.minDistance = dist * 0.55;
+        controls.maxDistance = dist * 2.8;
+        camera.near = Math.max(0.05, dist / 100);
+        camera.far = dist * 50;
+        camera.updateProjectionMatrix();
+        controls.update();
+      }
+
+      function resize() {
+        const w = host.clientWidth || 300;
+        const h = host.clientHeight || 280;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h, false);
+        frameRobot(false);
+      }
+      resize();
+      frameRobot(true);
+      window.addEventListener("resize", resize);
+      new ResizeObserver(resize).observe(host);
+
+      let t0 = performance.now();
+      let lastTick = t0;
+      function frame(now) {
+        const dt = Math.min(0.05, (now - lastTick) / 1000);
+        lastTick = now;
+        const t = (now - t0) / 1000;
+        const u = clip.dur > 0 ? Math.min(1, (now - clip.t0) / clip.dur) : 0;
+        const active = clip.dur > 0 && u < 1;
+        const name = active ? clip.name : "idle";
+        const face = active ? clip.face : "idle";
+        const hasParts = !!(headG && armL && armR);
+        const mode =
+          (robotRoot && robotRoot.userData.motionMode) ||
+          (robotRoot && robotRoot.userData.fakeRig ? "fakeRig" : hasParts ? "geometric" : "whole");
+        const wholeGlb = mode === "whole";
+
+        if (robotRoot && robotRoot.userData.mixer) {
+          robotRoot.userData.mixer.update(dt);
+        }
+
+        if (mode !== "skinned") {
+          if (headG) headG.rotation.set(0, 0, 0);
+          if (armL) armL.rotation.set(0, 0, 0);
+          if (armR) armR.rotation.set(0, 0, 0);
+        }
+
+        let extraY = talking ? Math.sin(t * 10) * 0.03 : Math.sin(t * 2) * 0.012;
+        let rootYaw = 0;
+
+        if (mode !== "skinned" && !active && hasParts) {
+          const breath = Math.sin(t * 1.6) * 0.05;
+          armL.rotation.z = 0.1 + breath;
+          armR.rotation.z = -0.1 - breath;
+          armL.rotation.x = Math.sin(t * 1.2) * 0.04;
+          armR.rotation.x = Math.sin(t * 1.2 + 0.4) * 0.04;
+          if (phase === "idle") headG.rotation.y = Math.sin(t * 0.7) * 0.08;
+        }
+
+        if (mode !== "skinned" && !active && headG) {
+          if (phase === "listening") {
+            headG.rotation.x = 0.14;
+            headG.rotation.y = Math.sin(t * 1.5) * 0.1;
+          } else if (phase === "thinking") {
+            headG.rotation.z = Math.sin(t * 2) * 0.14;
+            headG.rotation.y = 0.2;
+          } else if (phase === "speaking") {
+            headG.rotation.x = Math.sin(t * 8) * 0.05;
+            if (armR) {
+              armR.rotation.x = -0.15 + Math.sin(t * 6) * 0.08;
+              armR.rotation.z = -0.25;
+            }
+          }
+        }
+
+        if (mode !== "skinned") {
+          if (name === "wave" && armR) {
+            const flap = Math.abs(Math.sin(u * Math.PI * 5));
+            armR.rotation.z = -0.45 - flap * 1.4;
+            armR.rotation.x = -0.4 - flap * 0.2;
+            armR.rotation.y = Math.sin(u * Math.PI * 5) * 0.3;
+            if (armL) {
+              armL.rotation.z = 0.25;
+              armL.rotation.x = -0.12;
+            }
+          } else if (name === "nod" && headG) {
+            headG.rotation.x = Math.sin(u * Math.PI * 4) * 0.5;
+          } else if (name === "look" && headG) {
+            headG.rotation.y = Math.sin(u * Math.PI) * 0.75;
+          } else if (name === "hop") {
+            extraY += Math.sin(u * Math.PI) * 0.4;
+            if (armL && armR) {
+              armL.rotation.z = 0.6;
+              armR.rotation.z = -0.6;
+              armL.rotation.x = -0.25;
+              armR.rotation.x = -0.25;
+            }
+          }
+        } else {
+          if (name === "hop") extraY += Math.sin(u * Math.PI) * 0.25;
+          if (name === "look") rootYaw = Math.sin(u * Math.PI) * 0.35;
+        }
+
+        if (wholeGlb && robotRoot) {
+          rootYaw = name === "look" ? Math.sin(u * Math.PI) * 0.45 : Math.sin(t * 0.35) * 0.08;
+          if (name === "nod") robotRoot.rotation.x = Math.sin(u * Math.PI * 4) * 0.2;
+          else robotRoot.rotation.x = 0;
+          if (name === "wave") robotRoot.rotation.z = Math.sin(u * Math.PI * 4) * 0.12;
+          else robotRoot.rotation.z = 0;
+        } else if (robotRoot) {
+          robotRoot.rotation.x = 0;
+          robotRoot.rotation.z = 0;
+          if (hasParts && name === "look") rootYaw = Math.sin(u * Math.PI) * 0.2;
+          else if (hasParts || mode === "skinned") rootYaw += Math.sin(t * 0.35) * 0.04;
+        }
+
+        if (robotRoot) {
+          robotRoot.position.y = baseY + extraY;
+          robotRoot.rotation.y = rootYaw;
+        }
+
+        for (const m of emissiveMats) {
+          const base = m.userData.baseEmissive ?? 0.4;
+          m.emissiveIntensity = talking || active
+            ? base + 0.45 + Math.sin(t * 12) * 0.25
+            : base + Math.sin(t * 2) * 0.08;
+        }
+        if (chestLight) {
+          chestLight.material.emissiveIntensity = talking || name === "hop"
+            ? 1.2 + Math.sin(t * 12) * 0.4
+            : 0.75 + Math.sin(t * 2) * 0.15;
+        }
+        if (eyeL && eyeR) {
+          let sx = 1, sy = 1;
+          if (face === "wink" && active) {
+            sy = u < 0.45 ? Math.max(0.12, 1 - u * 2.2) : Math.min(1, (u - 0.45) * 2);
+            eyeL.scale.set(1, sy, 1);
+            eyeR.scale.setScalar(talking ? 1.1 : 1);
+          } else if (face === "surprised") {
+            sx = sy = 1.35;
+            eyeL.scale.setScalar(sx);
+            eyeR.scale.setScalar(sy);
+          } else {
+            const s = talking ? 1.15 + Math.sin(t * 14) * 0.1 : 1;
+            eyeL.scale.setScalar(s);
+            eyeR.scale.setScalar(s);
+          }
+        }
+        if (mouthMesh) {
+          mouthMesh.scale.y = face === "surprised" ? 2.2 : face === "happy" ? 1.4 : 1;
+          mouthMesh.scale.x = face === "happy" ? 1.25 : 1;
+        }
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    async function loadRobot() {
+      if (!robotId) {
+        errEl.textContent = "缺少机器人 id";
+        addMsg("sys", "请先从装配页生成机器人");
+        return;
+      }
+      const res = await fetch("/api/robot/" + robotId);
+      const data = await res.json();
+      if (!data.ok) {
+        errEl.textContent = data.reason || "加载失败";
+        return;
+      }
+      const p = data.passport;
+      document.getElementById("design-link").href =
+        `/design.html?robot=${encodeURIComponent(robotId)}`;
+      publishBtn.onclick = async () => {
+        publishBtn.disabled = true;
+        publishBtn.textContent = "发布中…";
+        errEl.textContent = "";
+        try {
+          const response = await fetch(`/api/robot/${encodeURIComponent(robotId)}/publish`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          });
+          const published = await response.json();
+          if (!published.ok) {
+            errEl.textContent = published.reason || "发布失败";
+            publishBtn.disabled = false;
+            publishBtn.textContent = "发布制作";
+            return;
+          }
+          location.href = published.publication_url;
+        } catch (_) {
+          errEl.textContent = "发布失败，请稍后重试";
+          publishBtn.disabled = false;
+          publishBtn.textContent = "发布制作";
+        }
+      };
+      document.getElementById("title").textContent = p.name;
+      document.getElementById("nameplate").textContent = p.name;
+      document.getElementById("subtitle").textContent =
+        p.status === "ready" ? "在线 · 可以聊天" : "草稿 · 未装基础对话，不能聊";
+      document.getElementById("skills").textContent =
+        "技能：" + ((p.installed_skill_ids || []).join("、") || "无");
+      const hardwareEl = document.getElementById("hardware");
+      if (p.hardware) {
+        hardwareEl.textContent =
+          "硬件：" + p.hardware.board_id + " · " +
+          (p.hardware.components || []).length + " 个配件 · " +
+          (p.hardware_capabilities || []).join("、");
+      } else {
+        hardwareEl.textContent = "硬件：旧版虚拟 Body";
+      }
+      const dl = document.getElementById("dl-avatar");
+      if (p.appearance_kind === "glb") {
+        dl.href = "/api/robot/" + robotId + "/avatar.glb";
+        dl.download = (p.name || "avatar") + ".glb";
+        document.getElementById("rig-panel").style.display = "";
+      } else {
+        document.getElementById("rig-panel").style.display = "none";
+      }
+      const statusEl = document.getElementById("rig-status");
+      const autoRigBtn = document.getElementById("auto-rig-btn");
+      autoRigBtn.onclick = async () => {
+        autoRigBtn.disabled = true;
+        statusEl.textContent = "正在后台自动绑骨（HF Space，可能需数分钟）…";
+        try {
+          const res = await fetch("/api/robot/" + robotId + "/auto-rig", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            statusEl.textContent = data.reason || "自动绑骨失败";
+            autoRigBtn.disabled = false;
+            return;
+          }
+          statusEl.textContent =
+            (data.hint || "完成") +
+            (data.animation_names && data.animation_names.length
+              ? " 动画：" + data.animation_names.join(", ")
+              : "");
+          if (!data.skipped) location.reload();
+          else autoRigBtn.disabled = false;
+        } catch (e) {
+          statusEl.textContent = "自动绑骨失败：" + (e && e.message ? e.message : e);
+          autoRigBtn.disabled = false;
+        }
+      };
+      document.getElementById("rig-file").onchange = async (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        statusEl.textContent = "正在上传绑骨 GLB…";
+        try {
+          const buf = await file.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let binary = "";
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+          }
+          const glb_b64 = btoa(binary);
+          const res = await fetch("/api/robot/" + robotId + "/avatar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ glb_b64 }),
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            statusEl.textContent = data.reason || "上传失败";
+            return;
+          }
+          statusEl.textContent =
+            (data.hint || "已保存") +
+            (data.animation_names && data.animation_names.length
+              ? " 动画：" + data.animation_names.join(", ")
+              : "");
+          location.reload();
+        } catch (e) {
+          statusEl.textContent = "上传失败：" + (e && e.message ? e.message : e);
+        }
+      };
+      const ids = p.installed_skill_ids || [];
+      caps = {
+        listen: ids.includes("sense.listen"),
+        tts: ids.includes("voice.tts"),
+        see: ids.includes("sense.see"),
+      };
+      micBtn.classList.toggle("show", caps.listen);
+      canChat = p.status === "ready";
+      await initViewer(p.appearance_kind === "glb" ? "glb" : "geometric");
+      if (canChat) {
+        const mode = (robotRoot && robotRoot.userData.motionMode) || "unknown";
+        const modeHint = {
+          skinned: "已加载骨骼动画。",
+          fakeRig: "已启用分部位假关节（头/手臂）。",
+          geometric: "使用几何体关节动画。",
+        }[mode] || "动作已就绪。";
+        addMsg(
+          "sys",
+          modeHint + "试试说：挥手、点头、跳一下、看看我。"
+        );
+        showBubble("你好，我是 " + p.name);
+        setPhase("idle");
+        if (headG && armR) startClip("wave", "happy");
+        else if (robotRoot && robotRoot.userData.actions) startClip("wave", "happy");
+        scheduleIdle();
+      } else {
+        addMsg("sys", "至少安装「基础对话」才能聊天。回去装配页再生成一只。");
+        inputEl.disabled = true;
+        sendBtn.disabled = true;
+        micBtn.disabled = true;
+      }
+    }
+
+    async function sendChat(text) {
+      if (!canChat || !text) return;
+      errEl.textContent = "";
+      addMsg("user", text);
+      busy = true;
+      stopIdle();
+      setPhase("thinking");
+      setTalking(true);
+      sendBtn.disabled = true;
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ robot_id: robotId, text }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          errEl.textContent = data.reason || "发送失败";
+          addMsg("sys", data.reason || "发送失败");
+          setTalking(false);
+          busy = false;
+          setPhase("idle");
+          scheduleIdle();
+          return;
+        }
+        if (data.capabilities) caps = { ...caps, ...data.capabilities };
+        micBtn.classList.toggle("show", caps.listen);
+        addMsg("bot", data.reply);
+        showBubble(data.reply);
+        setPhase("speaking");
+        const perform = data.perform || "idle";
+        startClip(perform, data.face || "happy");
+        if (data.use_tts) speakText(data.reply);
+        const hold = clip.dur || 800;
+        setTimeout(() => {
+          setTalking(false);
+          busy = false;
+          setPhase("idle");
+          scheduleIdle();
+        }, Math.max(1200, hold));
+      } catch (err) {
+        errEl.textContent = "网络错误";
+        setTalking(false);
+        busy = false;
+        setPhase("idle");
+        scheduleIdle();
+      } finally {
+        sendBtn.disabled = false;
+        inputEl.focus();
+      }
+    }
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = "";
+      await sendChat(text);
+    });
+
+    micBtn.addEventListener("click", () => {
+      if (!caps.listen || !canChat) return;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        errEl.textContent = "当前浏览器不支持语音识别";
+        return;
+      }
+      if (recognition) {
+        try { recognition.stop(); } catch (_) {}
+        recognition = null;
+        micBtn.classList.remove("on");
+        setPhase(busy ? phase : "idle");
+        return;
+      }
+      recognition = new SR();
+      recognition.lang = "zh-CN";
+      recognition.interimResults = false;
+      recognition.onstart = () => {
+        micBtn.classList.add("on");
+        stopIdle();
+        setPhase("listening");
+      };
+      recognition.onerror = () => {
+        micBtn.classList.remove("on");
+        recognition = null;
+        if (!busy) setPhase("idle");
+      };
+      recognition.onend = () => {
+        micBtn.classList.remove("on");
+        recognition = null;
+        if (!busy) setPhase("idle");
+      };
+      recognition.onresult = (ev) => {
+        const text = (ev.results[0] && ev.results[0][0] && ev.results[0][0].transcript) || "";
+        if (text.trim()) sendChat(text.trim());
+      };
+      recognition.start();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && canChat && !busy) scheduleIdle();
+    });
+
+    loadRobot();
+  </script>
+</body>
+</html>

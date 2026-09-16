@@ -38,6 +38,10 @@
     .layout-note,.message { margin:12px 0 0; color:var(--muted); font-size:12px; line-height:1.6; }
     .error { color:var(--red); }
     .success { color:var(--green); }
+    .warning { color:var(--yellow); }
+    .missing-list { margin:12px 0 0; padding-left:20px; color:var(--yellow); font-size:12px; line-height:1.7; }
+    .download-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:16px; }
+    .download-actions a { color:var(--text); background:#0d151e; border:1px solid var(--line); border-radius:9px; padding:9px 13px; font-weight:700; font-size:13px; text-decoration:none; }
     .joint-fields[hidden] { display:none; }
     .footer-nav { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; }
     .muted { color:var(--muted); }
@@ -88,6 +92,15 @@
       <p class="lead">导出结果包含工程交接 manifest 与 URDF；工程数据不全时会明确标记为 provisional。</p>
       <div class="panel">
         <button class="primary" id="export-design" type="button">导出工程交接</button>
+        <p id="export-message" class="message" aria-live="polite"></p>
+        <p id="export-status" class="message" hidden></p>
+        <p id="provisional-warning" class="message warning" hidden>provisional，不可当作生产或仿真精确 URDF</p>
+        <p id="validation-warning" class="message warning" hidden></p>
+        <ul id="missing-list" class="missing-list" hidden></ul>
+        <div class="download-actions" id="download-actions" hidden>
+          <a id="download-manifest" download="design-manifest.json" href="#">下载 design-manifest.json</a>
+          <a id="download-urdf" download="robot.urdf" href="#">下载 robot.urdf</a>
+        </div>
       </div>
     </section>
 
@@ -107,6 +120,7 @@
       catalog: { boards: [], components: [] },
       manifest: null,
       urdf: "",
+      downloadUrls: [],
     };
     const $ = (selector, element = document) => element.querySelector(selector);
     const $$ = (selector, element = document) => [...element.querySelectorAll(selector)];
@@ -346,12 +360,78 @@
       return physicalValid && poseValid;
     }
 
-    async function saveEngineering() {
+    function studioHref() {
+      return state.draftId ? `/?draft=${encodeURIComponent(state.draftId)}` : "/?track=studio";
+    }
+
+    function revokeDownloads() {
+      state.downloadUrls.forEach(url => URL.revokeObjectURL(url));
+      state.downloadUrls = [];
+    }
+
+    function bindDownload(anchor, text, type) {
+      const url = URL.createObjectURL(new Blob([text], { type }));
+      state.downloadUrls.push(url);
+      anchor.href = url;
+    }
+
+    function renderValidationWarning(validation) {
+      const warning = $("#validation-warning");
+      const issues = (validation?.issues || []).filter(issue => issue.level !== "suggestion");
+      warning.hidden = issues.length === 0;
+      warning.textContent = issues.length
+        ? `工程校验提示（不阻止下载）：${issues.map(issue => issue.message).join("；")}`
+        : "";
+    }
+
+    function renderExport(exported) {
+      const manifest = exported.manifest;
+      const status = $("#export-status");
+      status.hidden = false;
+      status.className = manifest.status === "ready" ? "message success" : "message warning";
+      status.textContent = `manifest 状态：${manifest.status}`;
+      const missing = manifest.missing_engineering_data || [];
+      const list = $("#missing-list");
+      list.hidden = missing.length === 0;
+      list.innerHTML = missing
+        .map(item => `<li>${escapeHtml(item.instance_id)} 缺少 ${escapeHtml((item.fields || []).join("、"))}</li>`)
+        .join("");
+      $("#provisional-warning").hidden = !exported.provisional;
+      revokeDownloads();
+      bindDownload($("#download-manifest"), JSON.stringify(manifest, null, 2), "application/json");
+      bindDownload($("#download-urdf"), state.urdf, "application/xml");
+      $("#download-actions").hidden = false;
+    }
+
+    async function runChecks() {
+      applyAllForms();
+      const [validation, exported] = await Promise.all([
+        fetch("/api/assembly/validate", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({assembly: state.assembly}),
+        }).then(r => r.json()),
+        fetch("/api/assembly/design-export", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({robot_name: state.name, assembly: state.assembly}),
+        }).then(r => r.json()),
+      ]);
+      if (!exported.ok) throw new Error(exported.reason || "工程导出失败");
+      const manifest = exported.manifest;
+      state.manifest = manifest;
+      state.urdf = exported.urdf;
+      renderValidationWarning(validation.validation);
+      renderExport(exported);
+      if (manifest.status === "ready") await saveEngineering("ready");
+    }
+
+    async function saveEngineering(designStatus = "provisional") {
       applyAllForms();
       const designPayload = {
         assembly: state.assembly,
         name: state.name,
-        design_status: "provisional",
+        design_status: designStatus,
         track: "design",
       };
       const url = state.robotId
@@ -368,8 +448,9 @@
         state.draftId = data.draft_id;
         history.replaceState(null, "", `/design.html?draft=${encodeURIComponent(state.draftId)}`);
       }
+      $("#studio-link").href = studioHref();
       $("#save-message").className = "message success";
-      $("#save-message").textContent = "工程事实已保存，当前状态为 provisional。";
+      $("#save-message").textContent = `工程事实已保存，当前状态为 ${designStatus}。`;
     }
 
     $("#design-steps").addEventListener("click", event => {
@@ -396,6 +477,7 @@
       state.robotId = null;
       state.assembly = createEmptyAssembly();
       history.replaceState(null, "", "/design.html");
+      $("#studio-link").href = studioHref();
       $("#source-error").hidden = true;
       renderComponents();
     });
@@ -409,14 +491,35 @@
       }
     });
 
+    $("#export-design").addEventListener("click", async () => {
+      const button = $("#export-design");
+      button.disabled = true;
+      $("#export-message").className = "message";
+      $("#export-message").textContent = "正在检查并导出……";
+      try {
+        await runChecks();
+        $("#export-message").className = "message success";
+        $("#export-message").textContent = "已生成 manifest 与 URDF，可直接下载。";
+      } catch (error) {
+        $("#export-message").className = "message error";
+        $("#export-message").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
     showScreen(0);
     Promise.all([loadCatalog(), loadSource()])
-      .then(renderComponents)
+      .then(() => {
+        renderComponents();
+        $("#studio-link").href = studioHref();
+      })
       .catch(error => {
         state.assembly ||= createEmptyAssembly();
         $("#source-error").textContent = error.message;
         $("#source-error").hidden = false;
         renderComponents();
+        $("#studio-link").href = studioHref();
       });
   </script>
 </body>

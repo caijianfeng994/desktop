@@ -138,6 +138,71 @@ def test_design_page_merges_joint_and_keeps_empty_triples_null():
     assert 'type="url"' not in html
 
 
+def test_dual_track_links_and_export_contract_are_present():
+    root = Path("src/desktop_robot/studio/static")
+    index = (root / "index.html").read_text(encoding="utf-8")
+    robot = (root / "robot.html").read_text(encoding="utf-8")
+    design = (root / "design.html").read_text(encoding="utf-8")
+    assert "工程与制造" in index
+    assert "工程与制造" in robot
+    assert "/api/assembly/validate" in design
+    assert "/api/assembly/design-export" in design
+    assert "provisional，不可当作生产或仿真精确 URDF" in design
+    assert 'download="design-manifest.json"' in design
+    assert 'download="robot.urdf"' in design
+
+
+def test_export_downloads_stay_enabled_and_revoke_previous_blob_urls():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    # 功耗/端口校验失败只提示，不得禁用或隐藏下载区。
+    assert (
+        '    function renderValidationWarning(validation) {\n'
+        '      const warning = $("#validation-warning");\n'
+        '      const issues = (validation?.issues || []).filter(issue => issue.level !== "suggestion");\n'
+        '      warning.hidden = issues.length === 0;\n'
+        '      warning.textContent = issues.length\n'
+        '        ? `工程校验提示（不阻止下载）：${issues.map(issue => issue.message).join("；")}`\n'
+        '        : "";\n'
+        '    }\n'
+    ) in html
+    # 重复导出必须先释放上一轮 Blob URL，否则每次导出都泄漏两个对象 URL。
+    assert (
+        '    function revokeDownloads() {\n'
+        '      state.downloadUrls.forEach(url => URL.revokeObjectURL(url));\n'
+        '      state.downloadUrls = [];\n'
+        '    }\n'
+    ) in html
+    assert (
+        '      revokeDownloads();\n'
+        '      bindDownload($("#download-manifest"), JSON.stringify(manifest, null, 2), "application/json");\n'
+        '      bindDownload($("#download-urdf"), state.urdf, "application/xml");\n'
+        '      $("#download-actions").hidden = false;\n'
+    ) in html
+    # provisional 警告只跟随导出结果，文案固定，不得由校验结果伪造。
+    assert '      $("#provisional-warning").hidden = !exported.provisional;\n' in html
+
+
+def test_export_ready_promotes_design_status_and_keeps_track_identity():
+    root = Path("src/desktop_robot/studio/static")
+    design = (root / "design.html").read_text(encoding="utf-8")
+    index = (root / "index.html").read_text(encoding="utf-8")
+    robot = (root / "robot.html").read_text(encoding="utf-8")
+    assert 'async function saveEngineering(designStatus = "provisional") {' in design
+    assert "        design_status: designStatus,\n" in design
+    assert '      if (manifest.status === "ready") await saveEngineering("ready");\n' in design
+    # 切回形象轨必须带上草稿标识，否则会丢掉当前草稿并落回选轨首屏。
+    assert (
+        '    function studioHref() {\n'
+        '      return state.draftId ? `/?draft=${encodeURIComponent(state.draftId)}` : "/?track=studio";\n'
+        '    }\n'
+    ) in design
+    assert '$("#studio-link").href = studioHref();' in design
+    assert 'id="design-link"' in index
+    assert '`/design.html?draft=${encodeURIComponent(state.draftId)}`' in index
+    assert 'id="design-link"' in robot
+    assert '`/design.html?robot=${encodeURIComponent(robotId)}`' in robot
+
+
 def test_track_picker_hides_studio_topbar_and_main():
     """选轨首屏必须同时收起旧顶栏，否则步骤导航和保存草稿会误改步骤或冲掉草稿。"""
     html = Path("src/desktop_robot/studio/static/index.html").read_text(encoding="utf-8")
