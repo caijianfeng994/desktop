@@ -120,3 +120,94 @@ def test_draft_save_preserves_engineering_fields(tmp_path: Path):
         assert saved["design_status"] == "ready"
     finally:
         server.shutdown()
+
+
+def test_draft_save_keeps_unsubmitted_parent_frame(tmp_path: Path):
+    server = make_server("127.0.0.1", 0, tmp_path)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        first = post(
+            port,
+            "/api/assembly/save",
+            {
+                "assembly": {
+                    **ASSEMBLY,
+                    "components": [{
+                        **ASSEMBLY["components"][0],
+                        "parent_frame": "head_link",
+                    }],
+                },
+                "track": "design",
+            },
+        )
+        post(
+            port,
+            "/api/assembly/save",
+            {
+                "draft_id": first["draft_id"],
+                "assembly": {
+                    **ASSEMBLY,
+                    "components": [{
+                        **ASSEMBLY["components"][0],
+                        "x": 55,
+                        "y": 65,
+                    }],
+                },
+                "name": "形象轨再次保存",
+            },
+        )
+        with urlopen(
+            f"http://127.0.0.1:{port}/api/assembly/draft/{first['draft_id']}",
+            timeout=5,
+        ) as response:
+            saved = json.loads(response.read().decode("utf-8"))["data"]
+        component = saved["assembly"]["components"][0]
+        assert component["x"] == 55
+        assert component["parent_frame"] == "head_link"
+    finally:
+        server.shutdown()
+
+
+def test_draft_save_clears_engineering_field_when_explicitly_null(tmp_path: Path):
+    server = make_server("127.0.0.1", 0, tmp_path)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        first = post(
+            port,
+            "/api/assembly/save",
+            {
+                "assembly": {
+                    **ASSEMBLY,
+                    "components": [{
+                        **ASSEMBLY["components"][0],
+                        "position_mm": [10, 20, 30],
+                    }],
+                },
+            },
+        )
+        post(
+            port,
+            "/api/assembly/save",
+            {
+                "draft_id": first["draft_id"],
+                "assembly": {
+                    **ASSEMBLY,
+                    "components": [{
+                        **ASSEMBLY["components"][0],
+                        "position_mm": None,
+                    }],
+                },
+            },
+        )
+        with urlopen(
+            f"http://127.0.0.1:{port}/api/assembly/draft/{first['draft_id']}",
+            timeout=5,
+        ) as response:
+            saved = json.loads(response.read().decode("utf-8"))["data"]
+        assert saved["assembly"]["components"][0]["position_mm"] is None
+    finally:
+        server.shutdown()

@@ -51,14 +51,7 @@ def merge_assembly_draft(existing: dict, incoming: dict) -> dict:
         if not isinstance(item, dict):
             continue
         component = dict(old_components.get(item.get("instance_id"), {}))
-        # 入站组件经过 pydantic 归一化，未填写的工程字段会变成显式 None；此处按“未提供”处理。
-        component.update(
-            {
-                key: value
-                for key, value in item.items()
-                if value is not None or key not in component
-            }
-        )
+        component.update(item)
         components.append(component)
     assembly["components"] = components
     merged["assembly"] = assembly

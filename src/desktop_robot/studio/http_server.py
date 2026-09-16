@@ -345,7 +345,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             self._json(400, {"ok": False, "reason": "draft_id 无效"})
             return
         saved = dict(payload)
-        saved["assembly"] = assembly.model_dump()
+        # 只落盘客户端真正提交过的字段，未提交字段不参与合并，避免覆盖另一轨的工程数据。
+        saved["assembly"] = assembly.model_dump(exclude_unset=True)
         save_assembly_draft(self.data_root, draft_id, saved, merge_existing=True)
         self._json(200, {"ok": True, "draft_id": draft_id})
 
