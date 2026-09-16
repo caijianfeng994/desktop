@@ -60,6 +60,20 @@ def test_dual_track_pages_are_served(tmp_path: Path):
         server.shutdown()
 
 
+def test_track_picker_hides_studio_topbar_and_main():
+    """选轨首屏必须同时收起旧顶栏，否则步骤导航和保存草稿会误改步骤或冲掉草稿。"""
+    html = Path("src/desktop_robot/studio/static/index.html").read_text(encoding="utf-8")
+    assert 'id="studio-topbar"' in html
+    hide_both = '$("#studio-topbar").hidden = showTrackPicker;'
+    assert hide_both in html
+    assert 'document.querySelector("main.page").hidden = showTrackPicker;' in html
+    assert '$("#studio-topbar").hidden = false;' in html
+    assert 'document.querySelector("main.page").hidden = false;' in html
+    assert "showStep(0);" in html
+    # .topbar 的 display:flex 会盖掉 [hidden] 的 display:none，必须显式补规则。
+    assert ".topbar[hidden] { display:none; }" in html
+
+
 def test_hardware_catalog_validate_wire_and_draft_api(tmp_path: Path):
     server = make_server("127.0.0.1", 0, tmp_path)
     thread = Thread(target=server.serve_forever, daemon=True)

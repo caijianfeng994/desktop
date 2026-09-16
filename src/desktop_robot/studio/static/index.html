@@ -14,6 +14,7 @@
     button,input,select,textarea { font:inherit; }
     button { cursor:pointer; }
     .topbar { height:64px; display:flex; align-items:center; gap:18px; padding:0 22px; border-bottom:1px solid var(--line); background:rgba(13,20,28,.9); backdrop-filter:blur(16px); position:sticky; top:0; z-index:40; }
+    .topbar[hidden] { display:none; }
     .brand { font-weight:800; letter-spacing:-.02em; white-space:nowrap; }
     .brand small { display:block; color:var(--muted); font-weight:500; font-size:10px; letter-spacing:.08em; }
     .steps { display:flex; align-items:center; gap:5px; margin:auto; }
@@ -156,11 +157,11 @@
     .track-card strong { font-size:17px; }
     .track-card span { color:var(--muted); font-size:12px; line-height:1.55; }
     @media(max-width:1050px){ .assembly-grid{grid-template-columns:220px 1fr}.inspect-pane{display:none}.skill-grid{grid-template-columns:repeat(2,1fr)} }
-    @media(max-width:720px){ .steps{display:none}.topbar{padding:0 12px}.page{padding:12px}.two-col,.board-grid,.summary-grid,.wiring-layout{grid-template-columns:1fr}.assembly-grid{display:block;height:auto}.parts-pane{border:0}.part-list{grid-template-columns:1fr 1fr}.workarea{height:600px}.skill-grid{grid-template-columns:1fr}.section-heading h1{font-size:25px}.topbar .ghost{display:none} }
+    @media(max-width:720px){ .steps{display:none}.topbar{padding:0 12px}.page{padding:12px}.two-col,.board-grid,.summary-grid,.wiring-layout,.track-grid{grid-template-columns:1fr}.assembly-grid{display:block;height:auto}.parts-pane{border:0}.part-list{grid-template-columns:1fr 1fr}.workarea{height:600px}.skill-grid{grid-template-columns:1fr}.section-heading h1{font-size:25px}.topbar .ghost{display:none} }
   </style>
 </head>
 <body>
-  <header class="topbar">
+  <header class="topbar" id="studio-topbar">
     <div class="brand">桌面机器人装配台<small>HARDWARE · WIRING · SKILLS</small></div>
     <nav class="steps" id="steps"></nav>
     <button class="ghost" id="save-draft" type="button">保存草稿</button>
@@ -359,11 +360,14 @@
     const routeParams = new URLSearchParams(location.search);
     const showTrackPicker = !routeParams.has("track") && !routeParams.has("draft");
     $("#track-picker").hidden = !showTrackPicker;
+    $("#studio-topbar").hidden = showTrackPicker;
     document.querySelector("main.page").hidden = showTrackPicker;
     $("#track-studio").addEventListener("click", () => {
       history.replaceState(null, "", "/?track=studio");
       $("#track-picker").hidden = true;
+      $("#studio-topbar").hidden = false;
       document.querySelector("main.page").hidden = false;
+      showStep(0);
     });
 
     loadData().then(loadDraft).then(validateAssembly);
