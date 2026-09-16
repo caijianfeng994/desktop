@@ -53,6 +53,9 @@ _ROBOT_AVATAR_UPLOAD_RE = re.compile(
 _ROBOT_AUTO_RIG_RE = re.compile(
     r"^/api/robot/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/auto-rig$"
 )
+_ROBOT_HARDWARE_RE = re.compile(
+    r"^/api/robot/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/hardware$"
+)
 _ASSEMBLY_DRAFT_RE = re.compile(r"^/api/assembly/draft/([0-9a-fA-F-]{36})$")
 _ROBOT_PUBLISH_RE = re.compile(
     r"^/api/robot/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/publish$"
@@ -234,6 +237,10 @@ class StudioHandler(BaseHTTPRequestHandler):
         if ar:
             self._handle_auto_rig(ar.group(1), payload)
             return
+        hardware = _ROBOT_HARDWARE_RE.match(path)
+        if hardware:
+            self._handle_robot_hardware_update(hardware.group(1), payload)
+            return
         if path == "/api/chat":
             self._handle_chat(payload)
             return
@@ -349,6 +356,22 @@ class StudioHandler(BaseHTTPRequestHandler):
         saved["assembly"] = assembly.model_dump(exclude_unset=True)
         save_assembly_draft(self.data_root, draft_id, saved, merge_existing=True)
         self._json(200, {"ok": True, "draft_id": draft_id})
+
+    def _handle_robot_hardware_update(self, robot_id: str, payload: dict[str, Any]) -> None:
+        """工程轨窄更新：只覆盖护照硬件装配，不触碰路线与技能列表。"""
+        assembly = self._assembly_from_payload(payload)
+        if assembly is None:
+            return
+        path = passport_path(self.data_root, robot_id)
+        try:
+            passport = load_passport(path)
+        except FileNotFoundError:
+            self._json(404, {"ok": False, "reason": "机器人不存在"})
+            return
+        passport.hardware = assembly
+        passport.passport_rev += 1
+        save_passport(self.data_root, passport)
+        self._json(200, {"ok": True, "passport": passport.model_dump()})
 
     def _drop_session(self, robot_id: str) -> None:
         reg = self._reg()

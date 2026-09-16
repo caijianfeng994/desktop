@@ -3,6 +3,7 @@ from pathlib import Path
 from threading import Thread
 from urllib.request import Request, urlopen
 
+from desktop_robot.passport.generate import generate_robot
 from desktop_robot.studio.http_server import make_server
 
 
@@ -12,6 +13,15 @@ ASSEMBLY = {
     "components": [
         {"instance_id": "audio-1", "component_id": "audio.usb-combo", "slot_id": "body.audio"},
         {"instance_id": "power-1", "component_id": "power.usb-15w", "slot_id": "body.power"},
+    ],
+}
+
+# chat.base 需要音频，body.wave 需要 motion.servo.arm，生成护照时必须同时满足。
+ARM_ASSEMBLY = {
+    **ASSEMBLY,
+    "components": [
+        *ASSEMBLY["components"],
+        {"instance_id": "arm-1", "component_id": "motion.arm-servo", "slot_id": "body.arm_right"},
     ],
 }
 
@@ -166,6 +176,40 @@ def test_draft_save_keeps_unsubmitted_parent_frame(tmp_path: Path):
         component = saved["assembly"]["components"][0]
         assert component["x"] == 55
         assert component["parent_frame"] == "head_link"
+    finally:
+        server.shutdown()
+
+
+def test_robot_hardware_update_does_not_change_skills_or_route(tmp_path: Path):
+    robot = generate_robot(
+        data_root=tmp_path,
+        name="工程葱",
+        route="custom",
+        skill_ids=["chat.base", "body.wave"],
+        hardware=ARM_ASSEMBLY,
+    )
+    server = make_server("127.0.0.1", 0, tmp_path)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        engineering = {
+            **ARM_ASSEMBLY,
+            "components": [{
+                **ARM_ASSEMBLY["components"][0],
+                "position_mm": [0, 0, 42],
+                "rotation_rpy_deg": [0, 0, 0],
+            }],
+        }
+        updated = post(
+            port,
+            f"/api/robot/{robot.robot_id}/hardware",
+            {"assembly": engineering},
+        )["passport"]
+        assert updated["passport_rev"] == robot.passport_rev + 1
+        assert updated["route"] == "custom"
+        assert updated["installed_skill_ids"] == ["chat.base", "body.wave"]
+        assert updated["hardware"]["components"][0]["position_mm"] == [0, 0, 42]
     finally:
         server.shutdown()
 
