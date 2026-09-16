@@ -104,6 +104,9 @@ class StudioHandler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._write(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
             return
+        if path in ("/design.html", "/design"):
+            self._write(200, (STATIC_DIR / "design.html").read_bytes(), "text/html; charset=utf-8")
+            return
         if path in ("/robot.html", "/robot"):
             self._write(200, (STATIC_DIR / "robot.html").read_bytes(), "text/html; charset=utf-8")
             return

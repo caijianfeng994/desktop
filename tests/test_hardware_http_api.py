@@ -26,6 +26,11 @@ ARM_ASSEMBLY = {
 }
 
 
+def get_text(port: int, path: str) -> str:
+    with urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as response:
+        return response.read().decode("utf-8")
+
+
 def post(port: int, path: str, payload: dict) -> dict:
     req = Request(
         f"http://127.0.0.1:{port}{path}",
@@ -35,6 +40,24 @@ def post(port: int, path: str, payload: dict) -> dict:
     )
     with urlopen(req, timeout=5) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def test_dual_track_pages_are_served(tmp_path: Path):
+    server = make_server("127.0.0.1", 0, tmp_path)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        index = get_text(port, "/")
+        design = get_text(port, "/design.html")
+        assert "选择创作路线" in index
+        assert "形象与互动" in index
+        assert "工程与制造" in index
+        assert 'id="track-picker"' in index
+        assert 'id="design-source"' in design
+        assert "导出工程交接" in design
+    finally:
+        server.shutdown()
 
 
 def test_hardware_catalog_validate_wire_and_draft_api(tmp_path: Path):
