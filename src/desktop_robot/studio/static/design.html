@@ -527,12 +527,26 @@
       state.draftId = null;
       state.robotId = null;
       state.assembly = createEmptyAssembly();
+      state.manifest = null;
+      state.designStatus = "provisional";
+      state.urdf = "";
+      resetExportView();
       history.replaceState(null, "", "/design.html");
       $("#studio-link").href = studioHref();
       $("#source-error").hidden = true;
+      $("#export-message").className = "message";
+      $("#export-message").textContent = "";
+      $("#save-message").className = "message";
+      $("#save-message").textContent = "";
       renderComponents();
     });
     $("#save-design").addEventListener("click", async () => {
+      if (!applyAllForms()) {
+        $("#save-message").className = "message error";
+        $("#save-message").textContent = "请先修正红框标出的工程参数，再保存工程草稿";
+        return;
+      }
+      $("#save-message").className = "message";
       $("#save-message").textContent = "正在保存……";
       try {
         await saveEngineering();

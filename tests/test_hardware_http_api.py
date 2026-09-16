@@ -267,6 +267,37 @@ def test_ready_write_back_is_draft_only_and_reported_separately():
     assert 'id="status-message"' in html
 
 
+def test_new_draft_resets_export_state_and_view():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    # 新建空草稿不得继承上一份来源的 ready 状态、URDF 文本与旧 Blob 下载。
+    assert (
+        '      state.assembly = createEmptyAssembly();\n'
+        '      state.manifest = null;\n'
+        '      state.designStatus = "provisional";\n'
+        '      state.urdf = "";\n'
+        '      resetExportView();\n'
+    ) in html
+    assert (
+        '      $("#save-message").className = "message";\n'
+        '      $("#save-message").textContent = "";\n'
+    ) in html
+
+
+def test_manual_save_requires_valid_forms():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    # 表单非法时显式保存必须直接返回，不得把上一次的 ready 状态连同残缺数据落盘。
+    assert (
+        '    $("#save-design").addEventListener("click", async () => {\n'
+        '      if (!applyAllForms()) {\n'
+        '        $("#save-message").className = "message error";\n'
+        '        $("#save-message").textContent = "请先修正红框标出的工程参数，再保存工程草稿";\n'
+        '        return;\n'
+        '      }\n'
+        '      $("#save-message").className = "message";\n'
+        '      $("#save-message").textContent = "正在保存……";\n'
+    ) in html
+
+
 def test_export_ready_promotes_design_status_and_keeps_track_identity():
     root = Path("src/desktop_robot/studio/static")
     design = (root / "design.html").read_text(encoding="utf-8")
