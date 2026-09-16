@@ -77,7 +77,8 @@
 
     <section id="design-physical" data-screen="physical" hidden>
       <h1>补录工程参数</h1>
-      <p class="lead">为每个配件填写实际尺寸与质量，以及 CAD 与网格来源。</p>
+      <p class="lead">为主控与每个配件填写实际尺寸与质量，以及 CAD 与网格来源。</p>
+      <div id="physical-board" class="component-list"></div>
       <div id="physical-components" class="component-list"></div>
     </section>
 
@@ -142,6 +143,7 @@
       return {
         target_mode: "physical",
         board_id: "board.pi-zero-2w",
+        board_physical_override: null,
         components: [],
         custom_boards: [],
         custom_components: [],
@@ -219,9 +221,33 @@
       return item?.name || component.component_id || component.instance_id;
     }
 
+    function boardLabel() {
+      const board = state.catalog.boards.find(candidate => candidate.id === state.assembly?.board_id);
+      return board?.name || state.assembly?.board_id || "主控";
+    }
+
     function layoutDescription(component) {
       const value = key => component[key] ?? "—";
       return `布局数据：x=${value("x")}%、y=${value("y")}%、z=${value("z")}、rotation=${value("rotation")}、scale=${value("scale")}。`;
+    }
+
+    function renderPhysicalFields(override, targetAttributes) {
+      return `
+          <form data-kind="physical" ${targetAttributes}>
+            <fieldset class="form-grid">
+              <label>实际尺寸（mm，长宽高）<input name="dimensions_mm" value="${escapeHtml(formatTriple(override.dimensions_mm, []))}" placeholder="80, 60, 25" /></label>
+              <label>实际质量（g）<input name="mass_g" type="number" min="0.001" step="any" value="${escapeHtml(override.mass_g ?? "")}" /></label>
+              <label>CAD 检索词<input name="cad_query" value="${escapeHtml(override.cad_query)}" /></label>
+              <label>CAD 来源 URL<input name="cad_source_url" type="text" value="${escapeHtml(override.cad_source_url)}" /></label>
+              <label>STEP 路径<input name="step_path" value="${escapeHtml(override.step_path)}" /></label>
+              <label>Mesh 路径<input name="mesh_path" value="${escapeHtml(override.mesh_path)}" /></label>
+              <label>Mesh 单位<select name="mesh_units"><option value="mm"${override.mesh_units !== "m" ? " selected" : ""}>mm</option><option value="m"${override.mesh_units === "m" ? " selected" : ""}>m</option></select></label>
+              <label>数据来源<input name="source" value="${escapeHtml(override.source)}" placeholder="例如：实测" /></label>
+              <label>可信度<select name="confidence"><option value="unknown"${!override.confidence || override.confidence === "unknown" ? " selected" : ""}>未知</option><option value="exact"${override.confidence === "exact" ? " selected" : ""}>精确</option><option value="estimated"${override.confidence === "estimated" ? " selected" : ""}>估算</option><option value="placeholder"${override.confidence === "placeholder" ? " selected" : ""}>占位</option></select></label>
+            </fieldset>
+            <p class="message error" data-form-error></p>
+            <div class="form-actions"><button class="secondary" type="submit">应用工程参数</button></div>
+          </form>`;
     }
 
     function renderPhysicalForm(component) {
@@ -230,19 +256,18 @@
         <article class="component-card">
           <h2>${escapeHtml(componentLabel(component))}</h2>
           <div class="muted">${escapeHtml(component.instance_id)}</div>
-          <form data-kind="physical" data-instance="${escapeHtml(component.instance_id)}">
-            <fieldset class="form-grid">
-              <label>实际尺寸（mm，长宽高）<input name="dimensions_mm" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.dimensions_mm" value="${escapeHtml(formatTriple(override.dimensions_mm, []))}" placeholder="80, 60, 25" /></label>
-              <label>实际质量（g）<input name="mass_g" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.mass_g" type="number" min="0.001" step="any" value="${escapeHtml(override.mass_g ?? "")}" /></label>
-              <label>CAD 检索词<input name="cad_query" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.cad_query" value="${escapeHtml(override.cad_query)}" /></label>
-              <label>CAD 来源 URL<input name="cad_source_url" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.cad_source_url" type="text" value="${escapeHtml(override.cad_source_url)}" /></label>
-              <label>STEP 路径<input name="step_path" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.step_path" value="${escapeHtml(override.step_path)}" /></label>
-              <label>Mesh 路径<input name="mesh_path" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.mesh_path" value="${escapeHtml(override.mesh_path)}" /></label>
-            </fieldset>
+          ${renderPhysicalFields(override, `data-instance="${escapeHtml(component.instance_id)}"`)}
             <p class="layout-note">${escapeHtml(layoutDescription(component))}<br />布局数据不得用于 URDF。</p>
-            <p class="message error" data-form-error></p>
-            <div class="form-actions"><button class="secondary" type="submit">应用工程参数</button></div>
-          </form>
+        </article>`;
+    }
+
+    function renderBoardPhysicalForm() {
+      const override = state.assembly?.board_physical_override || {};
+      return `
+        <article class="component-card">
+          <h2>${escapeHtml(boardLabel())}</h2>
+          <div class="muted">主控 · ${escapeHtml(state.assembly?.board_id)}</div>
+          ${renderPhysicalFields(override, 'data-board="true"')}
         </article>`;
     }
 
@@ -272,6 +297,7 @@
 
     function renderComponents() {
       const components = state.assembly?.components || [];
+      $("#physical-board").innerHTML = renderBoardPhysicalForm();
       $("#physical-components").innerHTML = components.length
         ? components.map(renderPhysicalForm).join("")
         : '<div class="panel muted">当前装配没有已安装组件。</div>';
@@ -285,6 +311,12 @@
       return state.assembly.components.find(component => component.instance_id === form.dataset.instance);
     }
 
+    function findPhysicalTarget(form) {
+      return form.dataset.board === "true"
+        ? state.assembly.board_physical_override || {}
+        : findComponent(form).physical_override || {};
+    }
+
     function clearFormError(form) {
       $$("input.invalid", form).forEach(input => input.classList.remove("invalid"));
       $("[data-form-error]", form).textContent = "";
@@ -292,38 +324,47 @@
 
     function applyPhysicalForm(form) {
       clearFormError(form);
-      const component = findComponent(form);
+      const target = findPhysicalTarget(form);
       let dimensions = null;
-      const mass = Number(form.elements.mass_g.value);
+      const dimensionsText = form.elements.dimensions_mm.value.trim();
+      const massText = form.elements.mass_g.value.trim();
+      const mass = Number(massText);
       let invalid = false;
       try {
-        dimensions = parseTriple(form.elements.dimensions_mm.value, "实际尺寸");
-        if (dimensions.some(value => value <= 0)) throw new Error("实际尺寸必须全部大于 0");
+        dimensions = dimensionsText ? parseTriple(dimensionsText, "实际尺寸") : null;
+        if (dimensions && dimensions.some(value => value <= 0)) throw new Error("实际尺寸必须全部大于 0");
       } catch (error) {
         dimensions = null;
         form.elements.dimensions_mm.classList.add("invalid");
         $("[data-form-error]", form).textContent = error.message;
         invalid = true;
       }
-      if (!form.elements.mass_g.value || !Number.isFinite(mass) || mass <= 0) {
+      if (massText && (!Number.isFinite(mass) || mass <= 0)) {
         form.elements.mass_g.classList.add("invalid");
         $("[data-form-error]", form).textContent += `${invalid ? "；" : ""}实际质量必须大于 0`;
         invalid = true;
       }
-      component.physical_override = {
-        ...(component.physical_override || {}),
+      const physical = {
+        ...target,
         dimensions_mm: dimensions,
-        mass_g: !form.elements.mass_g.classList.contains("invalid") ? mass : null,
+        mass_g: massText && !form.elements.mass_g.classList.contains("invalid") ? mass : null,
         cad_query: form.elements.cad_query.value || null,
         cad_source_url: form.elements.cad_source_url.value || null,
         step_path: form.elements.step_path.value || null,
         mesh_path: form.elements.mesh_path.value || null,
+        mesh_units: form.elements.mesh_units.value,
+        source: form.elements.source.value || "unspecified",
+        confidence: form.elements.confidence.value,
       };
+      if (form.dataset.board === "true") state.assembly.board_physical_override = physical;
+      else findComponent(form).physical_override = physical;
+      invalidateExport();
       return !invalid;
     }
 
     function applyPoseForm(form) {
       clearFormError(form);
+      invalidateExport();
       const component = findComponent(form);
       try {
         component.parent_frame = form.elements.parent_frame.value || "base_link";
@@ -390,6 +431,13 @@
       clearDownloads();
       ["#status-message", "#export-status", "#provisional-warning", "#validation-warning", "#missing-list"]
         .forEach(selector => { $(selector).hidden = true; });
+    }
+
+    function invalidateExport() {
+      state.manifest = null;
+      state.designStatus = "provisional";
+      state.urdf = "";
+      resetExportView();
     }
 
     function bindDownload(anchor, text, type) {
@@ -477,7 +525,6 @@
     }
 
     async function saveEngineering(designStatus = currentDesignStatus()) {
-      applyAllForms();
       const designPayload = {
         assembly: state.assembly,
         name: state.name,
@@ -511,6 +558,7 @@
     $("#design-prev").addEventListener("click", () => showScreen(stepIndex - 1));
     $("#design-next").addEventListener("click", () => showScreen(stepIndex + 1));
     document.addEventListener("change", event => {
+      if (event.target.closest('form[data-kind]')) invalidateExport();
       if (event.target.name === "joint.enabled") {
         const fields = $(".joint-fields", event.target.form);
         fields.hidden = event.target.value !== "true";
@@ -527,10 +575,7 @@
       state.draftId = null;
       state.robotId = null;
       state.assembly = createEmptyAssembly();
-      state.manifest = null;
-      state.designStatus = "provisional";
-      state.urdf = "";
-      resetExportView();
+      invalidateExport();
       history.replaceState(null, "", "/design.html");
       $("#studio-link").href = studioHref();
       $("#source-error").hidden = true;

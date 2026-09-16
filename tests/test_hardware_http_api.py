@@ -74,6 +74,10 @@ def test_design_page_contains_engineering_contract(tmp_path: Path):
         "rotation_rpy_deg",
         "joint.type",
         "joint.axis",
+        "board_physical_override",
+        "mesh_units",
+        "source",
+        "confidence",
     ):
         assert field in html
     assert "布局数据不得用于 URDF" in html
@@ -84,12 +88,63 @@ def test_design_page_contains_engineering_contract(tmp_path: Path):
 def test_design_page_clears_invalid_engineering_facts():
     html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
     assert "catch (error) {\n        dimensions = null;" in html
-    assert "mass_g: !form.elements.mass_g.classList.contains(\"invalid\") ? mass : null" in html
+    assert 'mass_g: massText && !form.elements.mass_g.classList.contains("invalid") ? mass : null' in html
     assert "component.joint = null;" in html
     assert "assembly: state.assembly" in html
     for layout_field in ("component.x", "component.y", "component.z", "component.rotation", "component.scale"):
         assert f"position_mm = {layout_field}" not in html
         assert f"rotation_rpy_deg = {layout_field}" not in html
+
+
+def test_empty_engineering_fields_are_missing_not_invalid_and_still_exported(tmp_path: Path):
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    assert 'const dimensionsText = form.elements.dimensions_mm.value.trim();' in html
+    assert 'dimensions = dimensionsText ? parseTriple(dimensionsText, "实际尺寸") : null;' in html
+    assert 'const massText = form.elements.mass_g.value.trim();' in html
+    assert "if (massText && (!Number.isFinite(mass) || mass <= 0)) {" in html
+    assert 'if (!applyAllForms()) throw new Error("请先修正红框标出的工程参数，再导出工程包");' in html
+
+    server = make_server("127.0.0.1", 0, tmp_path)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        assembly = {
+            **ASSEMBLY,
+            "board_physical_override": {
+                "dimensions_mm": None,
+                "mass_g": None,
+                "cad_query": None,
+                "cad_source_url": None,
+                "step_path": None,
+                "mesh_path": None,
+            },
+            "components": [
+                {
+                    **ASSEMBLY["components"][0],
+                    "position_mm": None,
+                    "rotation_rpy_deg": None,
+                    "physical_override": {
+                        "dimensions_mm": None,
+                        "mass_g": None,
+                        "cad_query": None,
+                        "cad_source_url": None,
+                        "step_path": None,
+                        "mesh_path": None,
+                    },
+                }
+            ],
+        }
+        exported = post(
+            port,
+            "/api/assembly/design-export",
+            {"robot_name": "全空工程字段", "assembly": assembly},
+        )
+        assert exported["ok"] is True
+        assert exported["provisional"] is True
+        assert exported["manifest"]["components"][0]["position_mm"] is None
+    finally:
+        server.shutdown()
 
 
 def test_design_page_merges_joint_and_keeps_empty_triples_null():
@@ -272,10 +327,7 @@ def test_new_draft_resets_export_state_and_view():
     # 新建空草稿不得继承上一份来源的 ready 状态、URDF 文本与旧 Blob 下载。
     assert (
         '      state.assembly = createEmptyAssembly();\n'
-        '      state.manifest = null;\n'
-        '      state.designStatus = "provisional";\n'
-        '      state.urdf = "";\n'
-        '      resetExportView();\n'
+        '      invalidateExport();\n'
     ) in html
     assert (
         '      $("#save-message").className = "message";\n'
@@ -295,6 +347,24 @@ def test_manual_save_requires_valid_forms():
         '      }\n'
         '      $("#save-message").className = "message";\n'
         '      $("#save-message").textContent = "正在保存……";\n'
+    ) in html
+
+
+def test_applied_engineering_changes_invalidate_previous_export():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    assert (
+        '    function invalidateExport() {\n'
+        '      state.manifest = null;\n'
+        '      state.designStatus = "provisional";\n'
+        '      state.urdf = "";\n'
+        '      resetExportView();\n'
+        '    }\n'
+    ) in html
+    assert "      invalidateExport();\n      return !invalid;" in html
+    assert (
+        "    function applyPoseForm(form) {\n"
+        "      clearFormError(form);\n"
+        "      invalidateExport();\n"
     ) in html
 
 
