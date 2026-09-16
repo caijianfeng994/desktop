@@ -60,6 +60,38 @@ def test_dual_track_pages_are_served(tmp_path: Path):
         server.shutdown()
 
 
+def test_design_page_contains_engineering_contract(tmp_path: Path):
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    for field in (
+        "dimensions_mm",
+        "mass_g",
+        "cad_query",
+        "cad_source_url",
+        "step_path",
+        "mesh_path",
+        "parent_frame",
+        "position_mm",
+        "rotation_rpy_deg",
+        "joint.type",
+        "joint.axis",
+    ):
+        assert field in html
+    assert "布局数据不得用于 URDF" in html
+    assert "/api/assembly/draft/" in html
+    assert "/api/robot/" in html
+
+
+def test_design_page_clears_invalid_engineering_facts():
+    html = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    assert "catch (error) {\n        dimensions = null;" in html
+    assert "mass_g: !form.elements.mass_g.classList.contains(\"invalid\") ? mass : null" in html
+    assert "component.joint = null;" in html
+    assert "assembly: state.assembly" in html
+    for layout_field in ("component.x", "component.y", "component.z", "component.rotation", "component.scale"):
+        assert f"position_mm = {layout_field}" not in html
+        assert f"rotation_rpy_deg = {layout_field}" not in html
+
+
 def test_track_picker_hides_studio_topbar_and_main():
     """选轨首屏必须同时收起旧顶栏，否则步骤导航和保存草稿会误改步骤或冲掉草稿。"""
     html = Path("src/desktop_robot/studio/static/index.html").read_text(encoding="utf-8")

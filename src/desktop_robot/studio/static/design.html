@@ -26,6 +26,19 @@
     h1 { font-size:30px; line-height:1.12; letter-spacing:-.03em; margin:0 0 8px; }
     .lead { margin:0; color:var(--muted); max-width:720px; line-height:1.65; }
     .panel { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:var(--shadow); margin-top:18px; }
+    .source-actions,.form-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+    .component-list { display:grid; gap:14px; margin-top:18px; }
+    .component-card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:var(--shadow); }
+    .component-card h2 { margin:0 0 4px; font-size:18px; }
+    .component-card fieldset { border:0; padding:0; margin:16px 0 0; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    label { display:grid; gap:6px; color:var(--muted); font-size:12px; }
+    input,select { width:100%; color:var(--text); background:#0d151e; border:1px solid var(--line); border-radius:8px; padding:9px 10px; }
+    input.invalid { border-color:var(--red); outline:1px solid var(--red); }
+    .layout-note,.message { margin:12px 0 0; color:var(--muted); font-size:12px; line-height:1.6; }
+    .error { color:var(--red); }
+    .success { color:var(--green); }
+    .joint-fields[hidden] { display:none; }
     .footer-nav { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; }
     .muted { color:var(--muted); }
     @media(max-width:720px){ .design-steps{display:none}.topbar{padding:0 12px}.page{padding:12px} }
@@ -47,16 +60,27 @@
     <section id="design-source" data-screen="source">
       <h1>选择工程来源</h1>
       <p class="lead">工程轨补录实际尺寸、质量、毫米位姿与关节，用于导出工程交接 manifest 与 URDF。</p>
+      <div class="panel">
+        <p id="source-summary" class="muted">正在加载工程来源……</p>
+        <p id="source-error" class="message error" hidden></p>
+        <div class="source-actions">
+          <button class="secondary" id="new-design" type="button">新建工程草稿</button>
+          <button class="primary" id="save-design" type="button">保存工程草稿</button>
+        </div>
+        <p id="save-message" class="message" aria-live="polite"></p>
+      </div>
     </section>
 
     <section id="design-physical" data-screen="physical" hidden>
       <h1>补录工程参数</h1>
       <p class="lead">为每个配件填写实际尺寸与质量，以及 CAD 与网格来源。</p>
+      <div id="physical-components" class="component-list"></div>
     </section>
 
     <section id="design-pose" data-screen="pose" hidden>
       <h1>补录三维位姿</h1>
       <p class="lead">以毫米与角度描述安装位置、旋转、父级坐标系与关节。</p>
+      <div id="pose-components" class="component-list"></div>
     </section>
 
     <section id="design-export" data-screen="export" hidden>
@@ -98,14 +122,286 @@
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
+    function createEmptyAssembly() {
+      return {
+        target_mode: "physical",
+        board_id: "board.pi-zero-2w",
+        components: [],
+        custom_boards: [],
+        custom_components: [],
+        view_mode: "front",
+        validation_rev: 3,
+        allow_power_override: false,
+      };
+    }
+
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.reason || `请求失败（${response.status}）`);
+      return data;
+    }
+
+    async function loadCatalog() {
+      const data = await fetchJson("/api/hardware/catalog");
+      state.catalog = data;
+    }
+
+    async function loadSource() {
+      const params = new URLSearchParams(location.search);
+      state.draftId = params.get("draft");
+      state.robotId = params.get("robot");
+      if (state.draftId) {
+        const data = await fetchJson(`/api/assembly/draft/${encodeURIComponent(state.draftId)}`);
+        if (!data.ok) throw new Error(data.reason);
+        state.assembly = data.data.assembly;
+        state.name = data.data.name || state.name;
+      } else if (state.robotId) {
+        const data = await fetchJson(`/api/robot/${encodeURIComponent(state.robotId)}`);
+        if (!data.ok || !data.passport.hardware) {
+          throw new Error(data.reason || "该机器人没有硬件装配");
+        }
+        state.assembly = data.passport.hardware;
+        state.name = data.passport.name;
+      } else {
+        state.assembly = createEmptyAssembly();
+      }
+    }
+
+    function parseTriple(value, label) {
+      const parts = value.split(",").map(part => Number(part.trim()));
+      if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) {
+        throw new Error(`${label} 必须是三个逗号分隔数字`);
+      }
+      return parts;
+    }
+
+    function formatTriple(value, fallback = [0, 0, 0]) {
+      return (Array.isArray(value) && value.length === 3 ? value : fallback).join(", ");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function componentLabel(component) {
+      const item = state.catalog.components.find(candidate => candidate.id === component.component_id);
+      return item?.name || component.component_id || component.instance_id;
+    }
+
+    function layoutDescription(component) {
+      const value = key => component[key] ?? "—";
+      return `布局数据：x=${value("x")}%、y=${value("y")}%、z=${value("z")}、rotation=${value("rotation")}、scale=${value("scale")}。`;
+    }
+
+    function renderPhysicalForm(component) {
+      const override = component.physical_override || {};
+      return `
+        <article class="component-card">
+          <h2>${escapeHtml(componentLabel(component))}</h2>
+          <div class="muted">${escapeHtml(component.instance_id)}</div>
+          <form data-kind="physical" data-instance="${escapeHtml(component.instance_id)}">
+            <fieldset class="form-grid">
+              <label>实际尺寸（mm，长宽高）<input name="dimensions_mm" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.dimensions_mm" value="${escapeHtml(formatTriple(override.dimensions_mm, []))}" placeholder="80, 60, 25" /></label>
+              <label>实际质量（g）<input name="mass_g" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.mass_g" type="number" min="0.001" step="any" value="${escapeHtml(override.mass_g ?? "")}" /></label>
+              <label>CAD 检索词<input name="cad_query" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.cad_query" value="${escapeHtml(override.cad_query)}" /></label>
+              <label>CAD 来源 URL<input name="cad_source_url" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.cad_source_url" type="url" value="${escapeHtml(override.cad_source_url)}" /></label>
+              <label>STEP 路径<input name="step_path" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.step_path" value="${escapeHtml(override.step_path)}" /></label>
+              <label>Mesh 路径<input name="mesh_path" data-instance="${escapeHtml(component.instance_id)}" data-field="physical_override.mesh_path" value="${escapeHtml(override.mesh_path)}" /></label>
+            </fieldset>
+            <p class="layout-note">${escapeHtml(layoutDescription(component))}<br />布局数据不得用于 URDF。</p>
+            <p class="message error" data-form-error></p>
+            <div class="form-actions"><button class="secondary" type="submit">应用工程参数</button></div>
+          </form>
+        </article>`;
+    }
+
+    function renderPoseForm(component) {
+      const joint = component.joint || {};
+      return `
+        <article class="component-card">
+          <h2>${escapeHtml(componentLabel(component))}</h2>
+          <div class="muted">${escapeHtml(component.instance_id)}</div>
+          <form data-kind="pose" data-instance="${escapeHtml(component.instance_id)}">
+            <fieldset class="form-grid">
+              <label>父级坐标系<input name="parent_frame" data-instance="${escapeHtml(component.instance_id)}" data-field="parent_frame" value="${escapeHtml(component.parent_frame || "base_link")}" /></label>
+              <label>安装位置（mm）<input name="position_mm" data-instance="${escapeHtml(component.instance_id)}" data-field="position_mm" value="${escapeHtml(formatTriple(component.position_mm))}" /></label>
+              <label>安装旋转 RPY（度）<input name="rotation_rpy_deg" data-instance="${escapeHtml(component.instance_id)}" data-field="rotation_rpy_deg" value="${escapeHtml(formatTriple(component.rotation_rpy_deg))}" /></label>
+              <label>启用关节<select name="joint.enabled"><option value="false"${component.joint ? "" : " selected"}>否</option><option value="true"${component.joint ? " selected" : ""}>是</option></select></label>
+            </fieldset>
+            <fieldset class="form-grid joint-fields"${component.joint ? "" : " hidden"}>
+              <label>关节类型<select name="joint.type" data-instance="${escapeHtml(component.instance_id)}" data-field="joint.type"><option value="fixed"${joint.type === "fixed" ? " selected" : ""}>固定</option><option value="revolute"${joint.type === "revolute" ? " selected" : ""}>旋转</option><option value="continuous"${joint.type === "continuous" ? " selected" : ""}>连续旋转</option><option value="prismatic"${joint.type === "prismatic" ? " selected" : ""}>直线</option></select></label>
+              <label>关节轴<input name="joint.axis" data-instance="${escapeHtml(component.instance_id)}" data-field="joint.axis" value="${escapeHtml(formatTriple(joint.axis, [0, 0, 1]))}" /></label>
+            </fieldset>
+            <p class="layout-note">${escapeHtml(layoutDescription(component))}<br />布局数据不得用于 URDF。</p>
+            <p class="message error" data-form-error></p>
+            <div class="form-actions"><button class="secondary" type="submit">应用三维位姿</button></div>
+          </form>
+        </article>`;
+    }
+
+    function renderComponents() {
+      const components = state.assembly?.components || [];
+      $("#physical-components").innerHTML = components.length
+        ? components.map(renderPhysicalForm).join("")
+        : '<div class="panel muted">当前装配没有已安装组件。</div>';
+      $("#pose-components").innerHTML = components.length
+        ? components.map(renderPoseForm).join("")
+        : '<div class="panel muted">当前装配没有已安装组件。</div>';
+      $("#source-summary").textContent = `工程：${state.name}；已安装组件：${components.length} 个`;
+    }
+
+    function findComponent(form) {
+      return state.assembly.components.find(component => component.instance_id === form.dataset.instance);
+    }
+
+    function clearFormError(form) {
+      $$("input.invalid", form).forEach(input => input.classList.remove("invalid"));
+      $("[data-form-error]", form).textContent = "";
+    }
+
+    function applyPhysicalForm(form) {
+      clearFormError(form);
+      const component = findComponent(form);
+      let dimensions = null;
+      const mass = Number(form.elements.mass_g.value);
+      let invalid = false;
+      try {
+        dimensions = parseTriple(form.elements.dimensions_mm.value, "实际尺寸");
+        if (dimensions.some(value => value <= 0)) throw new Error("实际尺寸必须全部大于 0");
+      } catch (error) {
+        dimensions = null;
+        form.elements.dimensions_mm.classList.add("invalid");
+        $("[data-form-error]", form).textContent = error.message;
+        invalid = true;
+      }
+      if (!form.elements.mass_g.value || !Number.isFinite(mass) || mass <= 0) {
+        form.elements.mass_g.classList.add("invalid");
+        $("[data-form-error]", form).textContent += `${invalid ? "；" : ""}实际质量必须大于 0`;
+        invalid = true;
+      }
+      component.physical_override = {
+        ...(component.physical_override || {}),
+        dimensions_mm: dimensions,
+        mass_g: !form.elements.mass_g.classList.contains("invalid") ? mass : null,
+        cad_query: form.elements.cad_query.value || null,
+        cad_source_url: form.elements.cad_source_url.value || null,
+        step_path: form.elements.step_path.value || null,
+        mesh_path: form.elements.mesh_path.value || null,
+      };
+      return !invalid;
+    }
+
+    function applyPoseForm(form) {
+      clearFormError(form);
+      const component = findComponent(form);
+      try {
+        component.parent_frame = form.elements.parent_frame.value || "base_link";
+        component.position_mm = parseTriple(form.elements.position_mm.value, "安装位置");
+        component.rotation_rpy_deg = parseTriple(form.elements.rotation_rpy_deg.value, "安装旋转");
+      } catch (error) {
+        const field = error.message.startsWith("安装位置") ? "position_mm" : "rotation_rpy_deg";
+        form.elements[field].classList.add("invalid");
+        $("[data-form-error]", form).textContent = error.message;
+        return false;
+      }
+      if (form.elements["joint.enabled"].value === "true") {
+        const axis = parseTriple(form.elements["joint.axis"].value, "关节轴");
+        if (axis.every(value => value === 0)) {
+          form.elements["joint.axis"].classList.add("invalid");
+          $("[data-form-error]", form).textContent = "关节轴不能为 (0, 0, 0)，已清空关节工程事实";
+          component.joint = null;
+          return true;
+        }
+        component.joint = { type: form.elements["joint.type"].value, axis };
+      } else {
+        component.joint = null;
+      }
+      return true;
+    }
+
+    function applyAllForms() {
+      const physicalValid = $$('form[data-kind="physical"]').map(applyPhysicalForm).every(Boolean);
+      const poseValid = $$('form[data-kind="pose"]').map(applyPoseForm).every(Boolean);
+      return physicalValid && poseValid;
+    }
+
+    async function saveEngineering() {
+      applyAllForms();
+      const designPayload = {
+        assembly: state.assembly,
+        name: state.name,
+        design_status: "provisional",
+        track: "design",
+      };
+      const url = state.robotId
+        ? `/api/robot/${encodeURIComponent(state.robotId)}/hardware`
+        : "/api/assembly/save";
+      if (state.draftId) designPayload.draft_id = state.draftId;
+      const data = await fetchJson(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(designPayload),
+      });
+      if (!data.ok) throw new Error(data.reason || "保存失败");
+      if (data.draft_id) {
+        state.draftId = data.draft_id;
+        history.replaceState(null, "", `/design.html?draft=${encodeURIComponent(state.draftId)}`);
+      }
+      $("#save-message").className = "message success";
+      $("#save-message").textContent = "工程事实已保存，当前状态为 provisional。";
+    }
+
     $("#design-steps").addEventListener("click", event => {
       const tab = event.target.closest("[data-step]");
       if (tab) showScreen(screens.indexOf(tab.dataset.step));
     });
     $("#design-prev").addEventListener("click", () => showScreen(stepIndex - 1));
     $("#design-next").addEventListener("click", () => showScreen(stepIndex + 1));
+    document.addEventListener("change", event => {
+      if (event.target.name === "joint.enabled") {
+        const fields = $(".joint-fields", event.target.form);
+        fields.hidden = event.target.value !== "true";
+      }
+    });
+    document.addEventListener("submit", event => {
+      const form = event.target.closest("form[data-kind]");
+      if (!form) return;
+      event.preventDefault();
+      if (form.dataset.kind === "physical") applyPhysicalForm(form);
+      else applyPoseForm(form);
+    });
+    $("#new-design").addEventListener("click", () => {
+      state.draftId = null;
+      state.robotId = null;
+      state.assembly = createEmptyAssembly();
+      history.replaceState(null, "", "/design.html");
+      $("#source-error").hidden = true;
+      renderComponents();
+    });
+    $("#save-design").addEventListener("click", async () => {
+      $("#save-message").textContent = "正在保存……";
+      try {
+        await saveEngineering();
+      } catch (error) {
+        $("#save-message").className = "message error";
+        $("#save-message").textContent = error.message;
+      }
+    });
 
     showScreen(0);
+    Promise.all([loadCatalog(), loadSource()])
+      .then(renderComponents)
+      .catch(error => {
+        state.assembly ||= createEmptyAssembly();
+        $("#source-error").textContent = error.message;
+        $("#source-error").hidden = false;
+        renderComponents();
+      });
   </script>
 </body>
 </html>
