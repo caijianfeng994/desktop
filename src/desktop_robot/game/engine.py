@@ -5,18 +5,28 @@ import sqlite3
 from pathlib import Path
 
 from desktop_robot.game.blueprints import Blueprint, classic_xiaofang_blueprint, structure_metrics
+from desktop_robot.game.parts import PART_DEFINITIONS
 from desktop_robot.passport.generate import generate_robot
 
 
-PARTS = [
-    dict(id="camera", name="摄像头", category="感知", description="扫描桌面，发现藏起来的目标。", power=3, ports=1, price=60, ability="扫描", icon="scan", owned=True),
-    dict(id="arm", name="右机械臂", category="动作", description="安装在正面右侧；独立装卸，单臂即可搬运核心。", power=5, ports=1, price=80, ability="搬运", icon="arm", owned=True),
-    dict(id="arm_left", name="左机械臂", category="动作", description="安装在正面左侧；独立装卸，单臂即可搬运核心。", power=5, ports=1, price=80, ability="搬运", icon="arm", owned=True),
-    dict(id="wheels", name="轮式底盘", category="动作", description="轻快、灵活，适合平整的桌面。", power=2, ports=1, price=0, ability="移动", icon="wheels", owned=True),
-    dict(id="battery", name="扩容电池", category="能源", description="供电上限提升到 18 W，远行更从容。", power=0, ports=0, price=100, ability="扩容", icon="battery", owned=False),
-    dict(id="display", name="表情屏幕", category="互动", description="让每一次相遇，都多一点表情。", power=2, ports=1, price=40, ability="表演", icon="face", owned=True),
-    dict(id="tracks", name="履带底盘", category="动作", description="越过桌面的小障碍；与轮式底盘互斥。", power=4, ports=1, price=120, ability="越障", icon="tracks", owned=False),
-]
+def _part_card(defn) -> dict:
+    return dict(
+        id=defn.id,
+        name=defn.name,
+        category=defn.category,
+        description=defn.description,
+        power=int(defn.power_w),
+        ports=defn.ports,
+        price=defn.price,
+        ability=defn.ability,
+        icon=defn.icon,
+        owned=defn.owned_by_default,
+    )
+
+
+# 快照仍只暴露旧七件，避免 UI 一次塞满未实装零件
+LEGACY_UI_PART_IDS = ["camera", "arm", "arm_left", "wheels", "battery", "display", "tracks"]
+PARTS = [_part_card(PART_DEFINITIONS[i]) for i in LEGACY_UI_PART_IDS]
 PART_BY_ID = {p["id"]: p for p in PARTS}
 MISSIONS = [
     dict(id="first-light", title="找回能量核心", subtitle="书桌上的第一次冒险", description="装上摄像头与机械臂，扫描并搬回散落的核心。", reward=80, xp=30, target=[6, 2], requires=["camera", "arm"], memory="第一次出发", quote="原来，我们真的可以把小小的光带回家。"),

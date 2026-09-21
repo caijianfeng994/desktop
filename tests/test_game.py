@@ -11,6 +11,28 @@ from desktop_robot.game.engine import BLOCKED, LOW_OBSTACLES, GameError, GameSto
 from desktop_robot.studio.http_server import make_server
 
 
+def test_parts_snapshot_matches_definition_catalog(tmp_path):
+    from desktop_robot.game.parts import PART_DEFINITIONS
+
+    store = GameStore(tmp_path)
+    ids = {p['id'] for p in store.get()['parts']}
+    # 前端仍只需旧七件；完整目录可更大
+    assert {"camera", "arm", "arm_left", "wheels", "battery", "display", "tracks"} <= ids
+    assert "core" in PART_DEFINITIONS
+    assert "core" not in ids
+    for part in store.get()['parts']:
+        defn = PART_DEFINITIONS[part['id']]
+        assert part['name'] == defn.name
+        assert part['category'] == defn.category
+        assert part['description'] == defn.description
+        assert part['power'] == int(defn.power_w)
+        assert part['ports'] == defn.ports
+        assert part['price'] == defn.price
+        assert part['ability'] == defn.ability
+        assert part['icon'] == defn.icon
+        assert part['owned'] == defn.owned_by_default
+
+
 def action(store, kind, **kwargs):
     return store.act(dict(action=kind, revision=store.get()['revision'], **kwargs))[0]
 
