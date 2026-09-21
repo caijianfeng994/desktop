@@ -1,4 +1,5 @@
 import {findPath, followPath} from './pathfinding.mjs';
+import {planStarterLoadout} from './loadout.mjs';
 
 const paths={robot:'M7 7V4h10v3M5 8h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Zm3 5v2m8-2v2M9 18h6M1 12v4m22-4v4',home:'m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9',tool:'m14 5 5-2-1 5-5 5-3-3 4-5ZM10 10l-7 7a2 2 0 0 0 3 3l7-7',board:'M9 4h6v4H9zM7 6H5v15h14V6h-2M8 12h8m-8 4h5',book:'M12 5C8 2 3 3 2 4v15c4-2 7-1 10 1 3-2 6-3 10-1V4c-4-2-7-1-10 1Zm0 0v15',coin:'m8 3 8 0 5 7-3 10H6L3 10 8 3Zm2 5h4l2 4-2 4h-4l-2-4 2-4Z',battery:'M3 6h16v12H3zM21 10v4m-10-6-3 5h5l-2 3',help:'M9 9a3 3 0 1 1 4 3c-1 0-1 1-1 2m0 3v.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',arrow:'M4 12h15m-6-6 6 6-6 6',pin:'m9 3 8 4-3 4v4l-8-4 3-2V3Zm0 10-4 8',parts:'m12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10L3 7m9 5 9-5m-9 5v10M7 5l9 5',scan:'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0Zm-3 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',arm:'M4 21h12M7 20v-6l5-4-4-5 3-3 6 7v4l-5 4v3M17 10l4 1v5m-1-5 2-3',wheels:'M5 7h14v9H5zM2 9v6m20-6v6M7 17v3m10-3v3M8 10h8',tracks:'M6 7h12a5 5 0 0 1 0 10H6A5 5 0 0 1 6 7Zm1 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z',face:'M3 4h18v15H3zM7 9v2m10-2v2M8 14q4 4 8 0M9 22h6',rotate:'M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 14-1l1 6M4 12l1 6a8 8 0 0 0 14-1',play:'m8 3 13 9-13 9V3Z',info:'M12 11v6m0-10v.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',move:'M12 2v20M2 12h20M8 6l4-4 4 4M8 18l4 4 4-4M6 8l-4 4 4 4m12-8 4 4-4 4',edit:'m4 15 12-12 5 5L9 20l-6 1 1-6Zm10-10 5 5',chat:'M4 3h16v14H9l-5 4V3Zm4 5h8m-8 4h5',blueprint:'M3 3h18v18H3zM7 3v3m4-3v2m4-2v3m4-3v2M7 11l4-3 6 4v6H7v-7Zm4-3v7h6',check:'m5 12 4 4L19 6',circle:'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z',star:'m12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 3-6Z',lock:'M6 10h12v11H6zM8 10V6a4 4 0 0 1 8 0v4m-4 5v2'};
 const icon=name=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.parts}"/></svg>`;
@@ -49,6 +50,28 @@ document.addEventListener('click',async e=>{const p=e.target.closest('[data-part
 document.addEventListener('dragstart',e=>{const p=e.target.closest('[data-part]');if(p&&state.owned.includes(p.dataset.part)){e.dataTransfer.setData('text/plain',p.dataset.part);e.dataTransfer.effectAllowed='copy'}});
 const drop=$('#drop-target');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('drag-over')});drop.addEventListener('dragleave',()=>drop.classList.remove('drag-over'));drop.addEventListener('drop',async e=>{e.preventDefault();drop.classList.remove('drag-over');const part=e.dataTransfer.getData('text/plain');if(state.equipped.includes(part)){toast('这个零件已经安装好了。');return}await act('equip',{part})});let rotationStart=null;drop.addEventListener('pointerdown',e=>{rotationStart=e.clientX;drop.setPointerCapture(e.pointerId)});drop.addEventListener('pointermove',e=>{if(rotationStart!==null&&scene){scene.angle+=(e.clientX-rotationStart)*.008;rotationStart=e.clientX}});drop.addEventListener('pointerup',()=>rotationStart=null);drop.addEventListener('pointercancel',()=>rotationStart=null);
 $('#charge').onclick=()=>act('charge');$('#move-help').onclick=()=>toast('点击桌面的空格自动寻路，或使用方向键逐格移动。');
+$('#apply-starter-loadout').onclick=()=>{
+ if(!state)return;
+ const partPower=Object.fromEntries(state.parts.map(p=>[p.id,p.power]));
+ const plan=planStarterLoadout({owned:state.owned,equipped:state.equipped,capacity:state.capacity,basePower:2,partPower});
+ const nameOf=id=>{const p=state.parts.find(x=>x.id===id);return p?p.name:id};
+ if(plan.missing.length){
+  showModal(`<span class="eyebrow">RECOMMENDED LOADOUT</span><h2>还差几件零件</h2><p>${esc(plan.note)}</p><p>缺口：${plan.missing.map(nameOf).map(esc).join('、')}。请先在零件库解锁，推荐装配不会自动扣币购买。</p><button class="primary full" id="close-loadout-gap">知道了</button>`);
+  $('#close-loadout-gap').onclick=()=>modal.close();
+  return;
+ }
+ const equipLine=plan.equip.length?plan.equip.map(nameOf).map(esc).join('、'):'无';
+ const unequipLine=plan.unequip.length?plan.unequip.map(nameOf).map(esc).join('、'):'无';
+ showModal(`<span class="eyebrow">RECOMMENDED LOADOUT</span><h2>应用首关推荐装配？</h2><p>${esc(plan.note)}</p><p>将安装：<strong>${equipLine}</strong></p><p>将卸下：<strong>${unequipLine}</strong></p><p>最终功耗：<strong>${plan.finalPower} / ${plan.finalCapacity} W</strong></p><div class="dialog-actions"><button class="dark" id="cancel-loadout">取消</button><button class="primary" id="confirm-loadout">确认应用</button></div>`);
+ $('#cancel-loadout').onclick=()=>modal.close();
+ $('#confirm-loadout').onclick=async()=>{
+  modal.close();
+  for(const id of plan.unequip){if(state.equipped.includes(id)&&!await act('equip',{part:id},true))return}
+  for(const id of plan.equip){if(!state.equipped.includes(id)&&!await act('equip',{part:id},true))return}
+  toast(plan.unequip.includes('display')?'已装上首关零件，并卸下表情屏幕。':'已应用首关推荐装配。');
+ };
+};
+
 $('#scan').onclick=async()=>{if(await act('scan'))scene?.scan()};$('#pick').onclick=()=>act('pick');$('#deliver').onclick=async()=>{if(!state.active)return;const m=state.missions.find(m=>m.id===state.active.mission),first=!state.completed.includes(m.id);if(await act('deliver',{},true)){routeVersion++;scene?.setRoute([]);navigate('home');showModal(`<div class="success-mark">${icon('star')}</div><span class="eyebrow" style="justify-content:center;margin-top:15px">A LITTLE MOMENT TO REMEMBER</span><h2 style="text-align:center">${first?'把光，带回家。':'又一次顺利归来。'}</h2><p style="text-align:center">${esc(m.quote)}</p><div class="reward-summary"><div><strong>+${first?m.reward:0}</strong><small>零件币${first?'':' · 首次奖励已领取'}</small></div><div><strong>+${first?m.xp:0}</strong><small>伙伴默契</small></div></div><div class="dialog-actions"><button class="dark" id="see-memories">查看回忆</button><button class="primary" id="next-task">下一次冒险</button></div>`);$('#see-memories').onclick=()=>{modal.close();navigate('companion')};$('#next-task').onclick=()=>{modal.close();navigate('missions')}}};
 $('#return-workshop').onclick=()=>navigate('home');
 $('#abandon-task').onclick=()=>{showModal('<span class="eyebrow">BACK TO THE WORKSHOP</span><h2>这次先回家？</h2><p>本次探索位置和携带的核心会重置，已获得的奖励与零件都会保留。</p><button class="primary full" id="confirm-abandon">放弃本次任务并回工坊</button>');$('#confirm-abandon').onclick=async()=>{routeVersion++;if(await act('abandon')){modal.close();navigate('home')}}};

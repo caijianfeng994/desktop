@@ -356,3 +356,19 @@ def test_assembly_cta_says_go_to_missions():
     assert '前往委托板' in html
     assert 'data-view="missions"' in html
     assert re.search(r'data-view="missions"[^>]*>\s*前往委托板', html)
+
+
+def test_assembly_has_starter_loadout_button():
+    html = Path('src/desktop_robot/studio/static/game.html').read_text()
+    assert '应用推荐装配（首关）' in html
+    assert 'id="apply-starter-loadout"' in html
+    js = Path('src/desktop_robot/studio/static/game/game.js').read_text()
+    assert "from './loadout.mjs'" in js
+    assert 'planStarterLoadout' in js
+    assert 'apply-starter-loadout' in js
+    loadout = Path('src/desktop_robot/studio/static/game/loadout.mjs').read_text()
+    assert 'export function planStarterLoadout' in loadout
+    # 推荐装配路径不得自动 buy
+    handler = js.split("$('#apply-starter-loadout')")[1].split("$('#scan')")[0]
+    assert "act('buy'" not in handler
+    assert "act('equip'" in handler
