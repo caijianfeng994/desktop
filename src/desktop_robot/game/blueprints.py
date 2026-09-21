@@ -14,8 +14,24 @@ __all__ = [
     "PartInstance",
     "Pose",
     "ValidationError",
+    "classic_xiaofang_blueprint",
+    "derived_equipped",
     "validate_blueprint",
 ]
+
+# 经典零件 → (core 父连接点, 子连接点)
+_CLASSIC_MOUNT: dict[str, tuple[str, str]] = {
+    "wheels": ("mount_bottom", "mount"),
+    "tracks": ("mount_bottom", "mount"),
+    "display": ("mount_front", "mount"),
+    "camera": ("mount_top", "mount"),
+    "arm": ("mount_right", "base"),
+    "arm_left": ("mount_left", "base"),
+    "battery": ("mount_back", "mount"),
+}
+
+# 单轮/驱动轮簇 → UI 认识的 wheels
+_WHEEL_CLUSTER = frozenset({"wheel", "drive_wheel"})
 
 
 class PartInstance(BaseModel):
@@ -251,3 +267,56 @@ def validate_blueprint(bp: Blueprint) -> list[ValidationError]:
                 )
 
     return errors
+
+
+def classic_xiaofang_blueprint(
+    equipped: list[str],
+    blueprint_id: str = "classic",
+) -> Blueprint:
+    """由旧版 equipped 零件 ID 列表生成经典小方蓝图（固定 core-1 根）。"""
+    zero = Pose()
+    instances: list[PartInstance] = [
+        PartInstance(instance_id="core-1", part_id="core", local_pose=zero),
+    ]
+    connections: list[Connection] = []
+
+    for part_id in equipped:
+        mount = _CLASSIC_MOUNT.get(part_id)
+        if mount is None:
+            continue
+        parent_point, child_point = mount
+        iid = f"{part_id}-1"
+        instances.append(
+            PartInstance(instance_id=iid, part_id=part_id, local_pose=zero)
+        )
+        connections.append(
+            Connection(
+                parent_instance_id="core-1",
+                parent_point_id=parent_point,
+                child_instance_id=iid,
+                child_point_id=child_point,
+            )
+        )
+
+    return Blueprint(
+        id=blueprint_id,
+        name="经典小方",
+        root_instance_id="core-1",
+        instances=instances,
+        connections=connections,
+    )
+
+
+def derived_equipped(bp: Blueprint) -> list[str]:
+    """从蓝图实例派生 UI equipped 列表：去重保序，跳过 core。"""
+    seen: set[str] = set()
+    result: list[str] = []
+    for inst in bp.instances:
+        if inst.part_id == "core":
+            continue
+        uid = "wheels" if inst.part_id in _WHEEL_CLUSTER else inst.part_id
+        if uid in seen:
+            continue
+        seen.add(uid)
+        result.append(uid)
+    return result

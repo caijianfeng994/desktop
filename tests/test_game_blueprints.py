@@ -69,3 +69,36 @@ def test_validate_rejects_cycle_and_missing_point():
     )
     codes = {e.code for e in validate_blueprint(bp)}
     assert "cycle" in codes or "disconnected" in codes or "point" in "".join(codes)
+
+
+from desktop_robot.game.blueprints import classic_xiaofang_blueprint, derived_equipped
+
+
+def test_classic_template_from_equipped_roundtrip():
+    equipped = ["wheels", "display", "camera", "arm", "arm_left"]
+    bp = classic_xiaofang_blueprint(equipped)
+    assert validate_blueprint(bp) == []
+    assert bp.root_instance_id
+    part_ids = [i.part_id for i in bp.instances]
+    assert part_ids.count("core") == 1
+    assert "arm" in part_ids and "arm_left" in part_ids
+    assert set(derived_equipped(bp)) >= {"wheels", "display", "camera", "arm", "arm_left"}
+
+
+def test_four_identical_wheels_are_distinct_instances():
+    wheels = [_inst(f"w{i}", "wheel") for i in range(4)]
+    assert len({w.instance_id for w in wheels}) == 4
+    bp = Blueprint(
+        id="quad-wheels",
+        name="四轮手工",
+        root_instance_id="core-1",
+        instances=[_inst("core-1", "core"), *wheels],
+        connections=[
+            Connection("core-1", "mount_bottom", "w0", "hub"),
+            Connection("core-1", "mount_left", "w1", "hub"),
+            Connection("core-1", "mount_right", "w2", "hub"),
+            Connection("core-1", "mount_back", "w3", "hub"),
+        ],
+    )
+    assert validate_blueprint(bp) == []
+    assert sum(1 for i in bp.instances if i.part_id == "wheel") == 4
