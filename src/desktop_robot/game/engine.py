@@ -69,6 +69,16 @@ def migrate_state(state: dict) -> dict:
     return state
 
 
+def sync_blueprint_with_equipped(state: dict) -> None:
+    bp = classic_xiaofang_blueprint(
+        state["equipped"],
+        blueprint_id=state.get("active_blueprint_id") or "classic",
+    )
+    state["active_blueprint_id"] = bp.id
+    others = [b for b in state.get("blueprints", []) if b.get("id") != bp.id]
+    state["blueprints"] = others + [bp.model_dump(mode="json")]
+
+
 def power(state: dict) -> tuple[int, int]:
     return 2 + sum(PART_BY_ID[p]["power"] for p in state["equipped"]), 18 if "battery" in state["equipped"] else 12
 
@@ -143,6 +153,7 @@ def apply_action(state: dict, payload: dict) -> str:
         if sum(PART_BY_ID[p]["ports"] for p in equipped) > 4:
             raise GameError("接口已满，请卸下一个零件。")
         state["equipped"] = equipped
+        sync_blueprint_with_equipped(state)
         return "装配已保存，伙伴的能力也更新了。"
     if action == "buy":
         part = payload.get("part")

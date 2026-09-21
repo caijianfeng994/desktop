@@ -299,3 +299,19 @@ def test_existing_active_save_can_pause_without_reset(tmp_path):
     assert paused['active']['moves'] == 1
     action(store, 'equip', part='arm')
     assert store.get()['active']['scanned'] is False
+
+
+def test_equip_updates_active_blueprint_instances(tmp_path):
+    store = GameStore(tmp_path)
+    assert store.get()['version'] == 3
+    before_ids = {i['part_id'] for b in store.get()['blueprints'] for i in b['instances']}
+    action(store, 'equip', part='camera')
+    state = store.get()
+    part_ids = {i['part_id'] for b in state['blueprints'] if b['id'] == state['active_blueprint_id'] for i in b['instances']}
+    assert 'camera' in part_ids
+    assert 'camera' in state['equipped']
+    action(store, 'equip', part='camera')  # toggle off
+    state = store.get()
+    part_ids = {i['part_id'] for b in state['blueprints'] if b['id'] == state['active_blueprint_id'] for i in b['instances']}
+    assert 'camera' not in part_ids
+    assert 'camera' not in state['equipped']
