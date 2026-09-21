@@ -76,7 +76,6 @@ async function walk(target){
   },
  });
  if(version===routeVersion)scene?.setRoute([]);
- if(!result.ok&&result.reason==='move_failed')toast('这一步没能走出去，请再点一次目标或换条路。');
 }
 document.addEventListener('keydown',e=>{if(view!=='play'||navigating||modal.open||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||e.altKey||e.ctrlKey||e.metaKey)return;const directions={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};if(directions[e.key]){e.preventDefault();routeVersion++;scene?.setRoute([]);if(!busy&&state.active){const d=directions[e.key];act('move',{position:state.active.position.map((v,i)=>v+d[i])},true)}}else if(['1','2','3'].includes(e.key)){e.preventDefault();$('#'+({'1':'scan','2':'pick','3':'deliver'}[e.key])).click()}});
 async function load(){try{const response=await fetch('/api/game');const data=await response.json();if(!data.ok)throw Error('存档加载失败');state=data.state;try{const {WorkshopScene}=await import('/game-assets/scene.js');scene=new WorkshopScene($('#world'),walk)}catch(error){console.error(error);const el=document.createElement('div');el.className='webgl-error';el.textContent='三维场景未能启动。请使用支持 WebGL 的浏览器并启用硬件加速；改装、图鉴和伙伴档案仍可使用。';$('#world').append(el)}$('#loading').hidden=true;navigate(location.hash.slice(1)||'home',true)}catch(error){$('#loading p').textContent='无法读取本地工坊，请确认 Studio 服务已启动。';$('#retry').hidden=false;$('#retry').onclick=()=>location.reload();console.error(error)}}
