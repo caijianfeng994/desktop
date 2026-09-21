@@ -337,3 +337,15 @@ def test_equip_updates_active_blueprint_instances(tmp_path):
     part_ids = {i['part_id'] for b in state['blueprints'] if b['id'] == state['active_blueprint_id'] for i in b['instances']}
     assert 'camera' not in part_ids
     assert 'camera' not in state['equipped']
+
+
+def test_play_quest_css_reserves_topbar_space():
+    from pathlib import Path
+
+    css = (Path('src/desktop_robot/studio/static/game/game.css')).read_text()
+    assert '--topbar-height' in css
+    assert 'play-quest' in css
+    # 收起态类名约定
+    assert 'play-quest-collapsed' in css or 'quest-collapsed' in css
+    html = Path('src/desktop_robot/studio/static/game.html').read_text()
+    assert 'id="toggle-quest"' in html or 'data-toggle-quest' in html

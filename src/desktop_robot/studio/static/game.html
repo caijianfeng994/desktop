@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f3eadb"><title>小小工坊 · 桌面机器人</title>
+<link rel="stylesheet" href="/game-assets/game.css">
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js"}}</script>
+</head>
+<body>
+<div id="world" aria-label="可交互的三维桌面"></div><div class="vignette"></div>
+<header class="topbar">
+ <a href="/" class="brand"><span class="brand-mark" data-icon="robot"></span><span>小小工坊<small>A LITTLE ROBOT, A BIG WORLD</small></span></a>
+ <div class="top-right"><div class="resource" title="完成委托获得零件币"><i data-icon="coin"></i><span id="coins">—</span><small>零件币</small></div><button class="resource" id="charge" title="在工坊充电"><i data-icon="battery"></i><span id="energy">—</span></button><button class="round" id="help" aria-label="玩法帮助"><i data-icon="help"></i></button></div>
+</header>
+<main id="interface">
+<section id="home" class="screen">
+ <div class="home-intro"><span class="eyebrow"><span class="live-dot"></span> 属于你们的小小世界</span><h1>小小的伙伴，<br>大大的<span>可能。</span></h1><p>装上灵感，带上好奇心。<br>从这张桌子开始，一起发现更多。</p><button class="primary" data-view="assembly">改装我的伙伴 <i data-icon="arrow"></i></button><div class="chapter"><span>CHAPTER 01</span><b>光，从这里开始</b><div class="chapter-dots"><i></i><i></i><i></i></div></div></div>
+ <aside class="home-quest paper"><div class="card-kicker"><i data-icon="pin"></i> 工坊委托 <span id="home-progress">00 / 03</span></div><h2 id="home-task">第一次出发</h2><p id="home-desc">正在读取工坊存档…</p><div class="reward-line"><i data-icon="coin"></i><b id="home-reward">+80</b><span>零件币</span></div><button class="dark full" data-view="missions">打开委托板 <i data-icon="arrow"></i></button></aside>
+ <button class="scene-label label-robot" data-view="companion"><span class="live-dot"></span><b id="robot-label">小方</b><small>查看伙伴</small><i data-icon="arrow"></i></button>
+ <div class="home-note"><span>✦</span><p>每一个零件，<br>都藏着一种新的可能。</p></div>
+</section>
+<section id="assembly" class="screen" hidden>
+ <div class="section-title"><span class="eyebrow">MAKE SOMETHING WONDERFUL</span><h1>给灵感，一个身体。</h1><p>挑选零件，看看伙伴能做些什么。</p></div>
+ <aside class="parts-panel paper"><div class="panel-heading"><h2><i data-icon="parts"></i> 零件库</h2><span id="owned-count"></span></div><div class="filters" id="part-filters"><button class="active" data-filter="全部">全部</button><button data-filter="感知">感知</button><button data-filter="动作">动作</button><button data-filter="能源">能源</button><button data-filter="互动">互动</button></div><div id="parts-grid" class="parts-grid"></div><p class="panel-foot">左右臂独立装卸（按正面左右）· 单臂即可搬运</p></aside>
+ <div class="assembly-center"><span class="model-badge">小方 / MODULAR COMPANION</span><div class="drop-target" id="drop-target" aria-label="将零件拖到这里安装"></div><span class="rotate-hint"><i data-icon="rotate"></i> 拖动空白处旋转视角</span></div>
+ <aside class="assembly-status paper"><div class="panel-heading"><h2><i data-icon="tool"></i> 装配状态</h2><span class="status-tag">实时同步</span></div><div class="meter-label">供电预算 <b id="power-label"></b></div><div class="meter"><span id="power-meter"></span></div><div class="meter-label">接口占用 <b id="port-label"></b></div><div id="port-dots" class="port-dots"></div><div class="divider"></div><span class="eyebrow">已解锁能力</span><div id="abilities" class="abilities"></div><p id="assembly-tip" class="tip"></p><button class="primary full" data-view="missions">开始试运行 <i data-icon="play"></i></button><a class="text-link" href="/?track=studio">高级硬件装配 <i data-icon="arrow"></i></a></aside>
+</section>
+<section id="missions" class="screen" hidden>
+ <div class="section-title"><span class="eyebrow">LITTLE ADVENTURES AWAIT</span><h1>今天，去哪里探险？</h1><p>带着你亲手装配的伙伴，完成桌面上的小小委托。</p></div>
+ <div class="mission-board" id="mission-board"></div>
+ <div class="board-note"><i data-icon="info"></i> 委托首次完成获得奖励；完成后可重复练习。进度自动保存。</div>
+</section>
+<section id="play" class="screen" hidden>
+ <aside class="play-quest paper"><button type="button" id="toggle-quest" aria-expanded="true">收起</button><div id="quest-body"><span class="eyebrow">正在探索 · DESKTOP 01</span><h2 id="play-title"></h2><div id="objectives"></div><div class="divider"></div><p id="play-hint"></p><button class="text-button" id="return-workshop">返回工坊 · 保留进度 <i data-icon="arrow"></i></button><button class="text-button" id="abandon-task">放弃本次任务</button></div></aside>
+ <div class="world-legend"><span><i class="legend-home"></i> 充电站</span><span><i class="legend-core"></i> 目标信号</span></div>
+ <div class="action-bar"><button id="move-help"><kbd>↑↓←→</kbd><i data-icon="move"></i><span>移动</span></button><button id="scan"><kbd>1</kbd><i data-icon="scan"></i><span>扫描</span></button><button id="pick"><kbd>2</kbd><i data-icon="arm"></i><span>搬运</span></button><button id="deliver"><kbd>3</kbd><i data-icon="home"></i><span>交付</span></button></div>
+ <div class="play-help">点击桌面自动寻路 · 方向键移动 · <span id="move-count">0</span> 步</div>
+</section>
+<section id="companion" class="screen" hidden>
+ <div class="section-title"><span class="eyebrow">GROW TOGETHER</span><h1>陪伴，让创造更温暖。</h1><p>每一段共同经历，都成为独一无二的你们。</p></div>
+ <div class="companion-speech"><span class="speech-avatar" data-icon="robot"></span><div><b id="speech-name">小方</b><p id="memory-quote">我的第一个愿望？和你一起，去看看桌子另一边。</p></div></div>
+ <aside class="companion-panel paper"><div class="panel-heading"><h2>伙伴档案</h2><span class="status-tag">已连接</span></div><div class="companion-name"><h3 id="companion-name">小方</h3><button id="rename" class="round" aria-label="修改伙伴名字"><i data-icon="edit"></i></button><span id="level">默契 Lv.1</span></div><div class="meter"><span id="xp-meter"></span></div><p class="xp-label" id="xp-label"></p><div class="divider"></div><div id="growth" class="growth"></div><div class="panel-heading memories-heading"><h2>珍贵的回忆</h2><small id="memory-count"></small></div><div id="memories" class="memories"></div><div class="appearance"><span>伙伴配色</span><div><button data-accent="teal" aria-label="青绿色" style="--swatch:#477e7c"></button><button data-accent="amber" aria-label="琥珀色" style="--swatch:#d9993e"></button><button data-accent="sage" aria-label="鼠尾草绿" style="--swatch:#8a9874"></button></div></div><button class="primary full" data-view="missions">一起训练 <i data-icon="arrow"></i></button><button class="text-button full" id="open-chat">和伙伴聊一聊 <i data-icon="chat"></i></button></aside>
+</section>
+<section id="collection" class="screen" hidden>
+ <div class="section-title"><span class="eyebrow">YOUR CABINET OF CURIOSITIES</span><h1>把想象，慢慢变成现实。</h1><p>收集零件、保存回忆，也把机器人带到真实的桌面。</p></div>
+ <div class="collection-layout"><div class="paper collection-parts"><div class="panel-heading"><h2>零件图鉴</h2><span id="collection-count"></span></div><div id="collection-grid"></div></div><div class="tools-stack"><a class="paper tool-card" href="/?track=studio"><i data-icon="tool"></i><div><h2>硬件工作台</h2><p>主控选型、端口接线、真实硬件技能</p></div><i data-icon="arrow"></i></a><a class="paper tool-card" href="/design.html"><i data-icon="blueprint"></i><div><h2>机器人结构设计</h2><p>尺寸、关节、结构清单与 URDF 导出</p></div><i data-icon="arrow"></i></a><a class="paper tool-card" href="/assembly-3d.html"><i data-icon="parts"></i><div><h2>3D 工程装配</h2><p>查看真实尺寸与毫米坐标</p></div><i data-icon="arrow"></i></a><a class="paper tool-card" href="/publish.html"><i data-icon="board"></i><div><h2>制作发布大厅</h2><p>发布机器人方案，领取制作需求</p></div><i data-icon="arrow"></i></a><p class="engineering-note">游戏零件与数值用于虚拟挑战。真实制作请进入硬件工作台，完成独立的工程校验。</p></div></div>
+</section>
+</main>
+<nav class="bottom-nav" aria-label="工坊导航"><button data-view="home" class="active"><i data-icon="home"></i><span>工坊</span></button><button data-view="assembly"><i data-icon="tool"></i><span>改装</span></button><button data-view="missions"><i data-icon="board"></i><span>委托</span><b id="task-dot"></b></button><button data-view="companion"><i data-icon="robot"></i><span>伙伴</span></button><button data-view="collection"><i data-icon="book"></i><span>图鉴</span></button></nav>
+<div class="save-status" id="save-status"><span class="live-dot"></span> 本地工坊 · 自动保存</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="loading" class="loading"><span class="loading-robot" data-icon="robot"></span><h2>正在打开你的小小工坊</h2><p>给伙伴一点准备的时间…</p><button hidden id="retry" class="primary">重新加载</button></div>
+<dialog id="modal"><button class="modal-close round" aria-label="关闭">×</button><div id="modal-content"></div></dialog>
+<script type="module" src="/game-assets/game.js"></script>
+</body></html>
