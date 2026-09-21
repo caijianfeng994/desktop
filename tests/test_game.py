@@ -1,6 +1,8 @@
 import json
+import re
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -340,8 +342,6 @@ def test_equip_updates_active_blueprint_instances(tmp_path):
 
 
 def test_play_quest_css_reserves_topbar_space():
-    from pathlib import Path
-
     css = (Path('src/desktop_robot/studio/static/game/game.css')).read_text()
     assert '--topbar-height' in css
     assert 'play-quest' in css
@@ -349,3 +349,10 @@ def test_play_quest_css_reserves_topbar_space():
     assert 'play-quest-collapsed' in css or 'quest-collapsed' in css
     html = Path('src/desktop_robot/studio/static/game.html').read_text()
     assert 'id="toggle-quest"' in html or 'data-toggle-quest' in html
+
+
+def test_assembly_cta_says_go_to_missions():
+    html = Path('src/desktop_robot/studio/static/game.html').read_text()
+    assert '前往委托板' in html
+    assert 'data-view="missions"' in html
+    assert re.search(r'data-view="missions"[^>]*>\s*前往委托板', html)
