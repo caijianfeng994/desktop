@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from math import hypot
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,8 +17,13 @@ __all__ = [
     "ValidationError",
     "classic_xiaofang_blueprint",
     "derived_equipped",
+    "structure_metrics",
     "validate_blueprint",
+    "world_poses",
 ]
+
+_ROLL_TRACK = frozenset({"roll", "track"})
+_TOOL_BEHAVIORS = frozenset({"grasp", "drag", "push"})
 
 # 经典零件 → (core 父连接点, 子连接点)
 _CLASSIC_MOUNT: dict[str, tuple[str, str]] = {
@@ -41,6 +47,23 @@ class PartInstance(BaseModel):
     part_id: str
     local_pose: Pose
     params: dict[str, float] = Field(default_factory=dict)
+
+    def __init__(
+        self,
+        instance_id: str,
+        part_id: str,
+        local_pose: Pose,
+        params: dict[str, float] | None = None,
+        **data: object,
+    ) -> None:
+        # 支持 brief 测试中的位置参数构造
+        super().__init__(
+            instance_id=instance_id,
+            part_id=part_id,
+            local_pose=local_pose,
+            params=params if params is not None else {},
+            **data,
+        )
 
 
 class Connection(BaseModel):
@@ -267,6 +290,109 @@ def validate_blueprint(bp: Blueprint) -> list[ValidationError]:
                 )
 
     return errors
+
+
+def _point_pose(part_id: str, point_id: str) -> Pose:
+    part = get_part(part_id)
+    for point in part.connection_points:
+        if point.id == point_id:
+            return point.pose
+    raise KeyError(f"连接点不存在: {part_id}.{point_id}")
+
+
+def _compose_translation(parent: Pose, parent_pt: Pose, child_pt: Pose, child_local: Pose) -> Pose:
+    """平移优先合成（父世界 + 父点 − 子点 + 子 local）。
+
+    旋转字段保留但本阶段不参与合成；完整旋转将在阶段 C 接入。
+    """
+    return Pose(
+        x=parent.x + parent_pt.x - child_pt.x + child_local.x,
+        y=parent.y + parent_pt.y - child_pt.y + child_local.y,
+        z=parent.z + parent_pt.z - child_pt.z + child_local.z,
+        rx=child_local.rx,
+        ry=child_local.ry,
+        rz=child_local.rz,
+    )
+
+
+def world_poses(bp: Blueprint) -> dict[str, Pose]:
+    """将局部位姿沿连接树合成世界位姿（平移优先；旋转待阶段 C）。"""
+    by_id = {inst.instance_id: inst for inst in bp.instances}
+    children: dict[str, list[Connection]] = defaultdict(list)
+    for conn in bp.connections:
+        children[conn.parent_instance_id].append(conn)
+
+    poses: dict[str, Pose] = {}
+    root = by_id[bp.root_instance_id]
+    poses[root.instance_id] = root.local_pose
+
+    stack = [root.instance_id]
+    while stack:
+        parent_id = stack.pop()
+        parent_pose = poses[parent_id]
+        parent_inst = by_id[parent_id]
+        for conn in children.get(parent_id, []):
+            child = by_id[conn.child_instance_id]
+            parent_pt = _point_pose(parent_inst.part_id, conn.parent_point_id)
+            child_pt = _point_pose(child.part_id, conn.child_point_id)
+            poses[child.instance_id] = _compose_translation(
+                parent_pose, parent_pt, child_pt, child.local_pose
+            )
+            stack.append(child.instance_id)
+    return poses
+
+
+def structure_metrics(bp: Blueprint) -> dict[str, float]:
+    """结构度量：轮距、抓取半径、质量与质心（基于平移世界位姿）。"""
+    poses = world_poses(bp)
+    by_id = {inst.instance_id: inst for inst in bp.instances}
+
+    roll_xz: list[tuple[float, float]] = []
+    tool_reaches: list[float] = []
+    tool_half_extents: list[float] = []
+    mass_sum = 0.0
+    mx = my = mz = 0.0
+
+    root_pose = poses[bp.root_instance_id]
+
+    for iid, pose in poses.items():
+        part = get_part(by_id[iid].part_id)
+        mass_sum += part.mass_kg
+        mx += part.mass_kg * pose.x
+        my += part.mass_kg * pose.y
+        mz += part.mass_kg * pose.z
+
+        if part.behaviors & _ROLL_TRACK:
+            roll_xz.append((pose.x, pose.z))
+
+        if part.behaviors & _TOOL_BEHAVIORS:
+            reach = hypot(pose.x - root_pose.x, pose.z - root_pose.z)
+            tool_reaches.append(reach)
+            tool_half_extents.append(max(part.size_m) / 2.0)
+
+    wheelbase_m = 0.0
+    for i, (x1, z1) in enumerate(roll_xz):
+        for x2, z2 in roll_xz[i + 1 :]:
+            wheelbase_m = max(wheelbase_m, hypot(x1 - x2, z1 - z2))
+
+    if tool_reaches:
+        best_i = max(range(len(tool_reaches)), key=lambda i: tool_reaches[i])
+        reach_m = tool_reaches[best_i]
+        half = tool_half_extents[best_i]
+    else:
+        reach_m = 0.0
+        half = 0.0
+
+    inv = 1.0 / mass_sum if mass_sum else 0.0
+    return {
+        "wheelbase_m": wheelbase_m,
+        "reach_m": reach_m,
+        "grasp_radius_m": reach_m + half,
+        "mass_kg": mass_sum,
+        "com_x": mx * inv,
+        "com_y": my * inv,
+        "com_z": mz * inv,
+    }
 
 
 def classic_xiaofang_blueprint(
