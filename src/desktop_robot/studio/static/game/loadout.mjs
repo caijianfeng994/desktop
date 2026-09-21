@@ -38,6 +38,7 @@ export function planStarterLoadout({owned, equipped, capacity, basePower, partPo
       finalPower: sumPower(equippedNow),
       finalCapacity: capacity,
       target: [...equippedNow],
+      ok: false,
     };
   }
 
@@ -63,22 +64,53 @@ export function planStarterLoadout({owned, equipped, capacity, basePower, partPo
     if (sumPower(withBoth) <= finalCapacity) target.add(otherArm);
   }
 
+  // Tracks + camera + arm can exceed 12W even without display — prefer wheels.
+  if (sumPower(target) > finalCapacity && target.has('tracks') && ownedSet.has('wheels')) {
+    target.delete('tracks');
+    target.add('wheels');
+    chassis = 'wheels';
+    if (equippedNow.includes('display') && !target.has('display')) {
+      const withDisplay = [...target, 'display'];
+      if (sumPower(withDisplay) <= finalCapacity) target.add('display');
+    }
+  }
+
+  const finalPower = sumPower(target);
+  if (finalPower > finalCapacity) {
+    return {
+      equip: [],
+      unequip: [],
+      missing: [],
+      note: '供电超出预算，请先安装扩容电池或调整装配。',
+      finalPower,
+      finalCapacity,
+      target: [...equippedNow],
+      ok: false,
+    };
+  }
+
   const targetList = [...target];
   const equip = targetList.filter((id) => !equippedNow.includes(id));
   const unequip = equippedNow.filter((id) => !target.has(id));
 
-  const note = unequip.includes('display')
-    ? '为装上摄像头与机械臂，需临时卸下表情屏幕（供电预算内）。'
-    : '将安装首关所需零件，不自动购买。';
+  let note = '将安装首关所需零件，不自动购买。';
+  if (unequip.includes('tracks') && equip.includes('wheels')) {
+    note = unequip.includes('display')
+      ? '履带功耗偏高，改推轮式底盘，并卸下表情屏幕以装上摄像头与机械臂。'
+      : '履带功耗偏高，改推轮式底盘以装上摄像头与机械臂。';
+  } else if (unequip.includes('display')) {
+    note = '为装上摄像头与机械臂，需临时卸下表情屏幕（供电预算内）。';
+  }
 
   return {
     equip,
     unequip,
     missing: [],
     note,
-    finalPower: sumPower(targetList),
+    finalPower,
     finalCapacity,
     target: targetList,
+    ok: true,
   };
 }
 
@@ -93,6 +125,7 @@ export function recommendedLoadoutFor(missionId, state) {
       finalPower: 0,
       finalCapacity: 0,
       target: [],
+      ok: false,
     };
   }
   const partPower = Object.fromEntries((state.parts || []).map((p) => [p.id, p.power]));

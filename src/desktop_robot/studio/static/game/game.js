@@ -60,6 +60,11 @@ $('#apply-starter-loadout').onclick=()=>{
   $('#close-loadout-gap').onclick=()=>modal.close();
   return;
  }
+ if(plan.ok===false){
+  showModal(`<span class="eyebrow">RECOMMENDED LOADOUT</span><h2>供电预算不足</h2><p>${esc(plan.note)}</p><p>最终功耗：<strong>${plan.finalPower} / ${plan.finalCapacity} W</strong></p><button class="primary full" id="close-loadout-power">知道了</button>`);
+  $('#close-loadout-power').onclick=()=>modal.close();
+  return;
+ }
  const equipLine=plan.equip.length?plan.equip.map(nameOf).map(esc).join('、'):'无';
  const unequipLine=plan.unequip.length?plan.unequip.map(nameOf).map(esc).join('、'):'无';
  showModal(`<span class="eyebrow">RECOMMENDED LOADOUT</span><h2>应用首关推荐装配？</h2><p>${esc(plan.note)}</p><p>将安装：<strong>${equipLine}</strong></p><p>将卸下：<strong>${unequipLine}</strong></p><p>最终功耗：<strong>${plan.finalPower} / ${plan.finalCapacity} W</strong></p><div class="dialog-actions"><button class="dark" id="cancel-loadout">取消</button><button class="primary" id="confirm-loadout">确认应用</button></div>`);
