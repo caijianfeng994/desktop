@@ -94,7 +94,9 @@ export function planStarterLoadout({owned, equipped, capacity, basePower, partPo
   const unequip = equippedNow.filter((id) => !target.has(id));
 
   let note = '将安装首关所需零件，不自动购买。';
-  if (unequip.includes('tracks') && equip.includes('wheels')) {
+  if (!equip.length && !unequip.length) {
+    note = '当前装配已满足首关推荐。';
+  } else if (unequip.includes('tracks') && equip.includes('wheels')) {
     note = unequip.includes('display')
       ? '履带功耗偏高，改推轮式底盘，并卸下表情屏幕以装上摄像头与机械臂。'
       : '履带功耗偏高，改推轮式底盘以装上摄像头与机械臂。';
