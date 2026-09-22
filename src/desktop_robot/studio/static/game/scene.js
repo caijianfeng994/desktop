@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import {advancePose} from './motion.mjs';
+import {createMotionGate} from './motionGate.mjs';
 
 const palette={cream:0xf1e4c8,teal:0x477e7c,amber:0xe8a143,wood:0xb78a56,dark:0x263d3b};
 export class WorkshopScene {
  constructor(container,onTile){
-  this.container=container;this.onTile=onTile;this.view='home';this.equipped=[];this.current=null;this.angle=0;this.dragging=false;this.motionWaiters=[];this.moving=false;this.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  this.container=container;this.onTile=onTile;this.view='home';this.equipped=[];this.current=null;this.angle=0;this.dragging=false;this.motion=createMotionGate();this.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
   this.scene=new THREE.Scene();this.scene.background=new THREE.Color(0xe9deca);this.scene.fog=new THREE.Fog(0xe9deca,27,65);
   this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.1;container.append(this.renderer.domElement);
   this.camera=new THREE.PerspectiveCamera(35,1,.1,100);this.camera.position.set(12,12,16);this.look=new THREE.Vector3(0,0,0);this.destination=new THREE.Vector3(12,12,16);this.target=new THREE.Vector3(0,0,0);
@@ -69,8 +70,11 @@ export class WorkshopScene {
   for(const x of [.35,.65])this.box(.1,.22,.16,0x46645d,x,-.6,.4,arm,.025);
   return arm;
  }
- waitForMotion(){return this.moving?new Promise(resolve=>this.motionWaiters.push(resolve)):Promise.resolve()}
- finishMotion(){this.moving=false;for(const resolve of this.motionWaiters.splice(0))resolve()}
+ get moving(){return this.motion.moving}
+ set moving(value){this.motion.moving=value}
+ armMotion(){return this.motion.armMotion(this.robot.position.distanceTo(this.robotTarget)<.001)}
+ waitForMotion(){return this.motion.waitForMotion()}
+ finishMotion(){this.motion.finishMotion()}
  core(r){const g=new THREE.Group();const m=new THREE.Mesh(new THREE.IcosahedronGeometry(r,0),this.material(0xe6a124,{emissive:0xdd7811,emissiveIntensity:.25,roughness:.25,metalness:.2}));g.add(m);const edges=new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry),new THREE.LineBasicMaterial({color:0xfff2b0}));g.add(edges);return g}
  makeLevel(){const mat=this.material(0xd0a674,{map:this.texture('wood')});this.box(11.5,.15,11.5,mat,0,-.19,0,this.level,.04);this.tiles=new THREE.Group();this.level.add(this.tiles);for(let x=0;x<9;x++)for(let y=0;y<9;y++){const tile=this.box(.98,.012,.98,this.material(0xf2d9a8,{transparent:true,opacity:.08}),x-4,.02,y-4,this.tiles,.005);tile.userData.tile=[x,y]}
   this.homeRing=new THREE.Mesh(new THREE.TorusGeometry(.4,.065,12,48),this.material(0x8ee7d3,{emissive:0x4bbfae,emissiveIntensity:.7}));this.homeRing.rotation.x=Math.PI/2;this.homeRing.position.set(-3,.12,-3);this.level.add(this.homeRing);this.box(.95,.1,.95,0x446d63,-3,.06,-3,this.level);

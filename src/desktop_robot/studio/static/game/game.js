@@ -31,7 +31,7 @@ async function navigate(next,replace=false){
 }
 window.addEventListener('popstate',()=>navigate(location.hash.slice(1)||'home',true));
 document.addEventListener('click',e=>{const nav=e.target.closest('[data-view]');if(nav)navigate(nav.dataset.view)});
-async function act(action,extra={},quiet=false){if(busy||!state)return false;busy=true;actionSettled=new Promise(resolve=>{finishAction=resolve});document.body.classList.add('busy');$('#save-status').innerHTML=`${icon('rotate')} 正在保存…`;try{const response=await fetch('/api/game/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,revision:state.revision,...extra})});const data=await response.json();if(data.state)state=data.state;render();scene?.update(state,view);if(!data.ok){toast(data.reason||'操作未完成');return false}if(action==='move')await scene?.waitForMotion();if(!quiet)toast(data.message);return data}catch(error){toast('暂时无法连接工坊，未确认保存。请重试。');return false}finally{busy=false;finishAction();document.body.classList.remove('busy');$('#save-status').innerHTML='<span class="live-dot"></span> 本地工坊 · 自动保存'}}
+async function act(action,extra={},quiet=false){if(busy||!state)return false;busy=true;actionSettled=new Promise(resolve=>{finishAction=resolve});document.body.classList.add('busy');$('#save-status').innerHTML=`${icon('rotate')} 正在保存…`;try{const response=await fetch('/api/game/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,revision:state.revision,...extra})});const data=await response.json();if(data.state)state=data.state;render();scene?.update(state,view);if(!data.ok){toast(data.reason||'操作未完成');return false}if(action==='move')await scene?.armMotion();if(!quiet)toast(data.message);return data}catch(error){toast('暂时无法连接工坊，未确认保存。请重试。');return false}finally{busy=false;finishAction();document.body.classList.remove('busy');$('#save-status').innerHTML='<span class="live-dot"></span> 本地工坊 · 自动保存'}}
 function hasPart(id){return id==='arm'?state.equipped.some(p=>p==='arm'||p==='arm_left'):state.equipped.includes(id)}
 function requirementName(id){return id==='arm'?'机械臂（左 / 右任选）':state.parts.find(p=>p.id===id).name}
 function render(){if(!state)return;$('#coins').textContent=state.coins;$('#energy').textContent=state.energy+'%';$('#robot-label').textContent=state.name;$('#speech-name').textContent=state.name;$('#companion-name').textContent=state.name;$('.model-badge').textContent=state.name+' / MODULAR COMPANION';$('#charge').disabled=!!state.active&&!state.active.paused;$('#charge').title=state.active&&!state.active.paused?'返回工坊暂停任务后可充电':'点击补满电量';const next=state.missions.find(m=>!state.completed.includes(m.id))||state.missions[2];$('#home-task').textContent=state.completed.length===3?'工坊亮起来了':next.title;$('#home-desc').textContent=state.completed.length===3?'三个委托都完成了！试试新的装配，也可以重温这段小小冒险。':next.description;$('#home-reward').textContent=state.completed.length===3?'3 / 3':'+'+next.reward;$('#home-progress').textContent=`0${state.completed.length} / 03`;$$('.chapter-dots i').forEach((el,i)=>el.classList.toggle('done',i<state.completed.length));$('#task-dot').hidden=state.completed.length===3;
@@ -99,7 +99,9 @@ async function walk(target){
    await actionSettled;
    // Skip act when superseded; return true so followPath's version check marks cancelled (not move_failed).
    if(version!==routeVersion||view!=='play'||!state.active)return true;
+   const from=state.active.position;
    const data=await act('move',{position:pos},true);
+   if(localStorage.DEBUG_WALK==='1')console.debug({step:i,from,to:pos,reason:data? 'ok': 'move_failed'});
    if(!data)return false;
    scene?.setRoute(path.slice(i+1));
    return true;
