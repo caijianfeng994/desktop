@@ -351,6 +351,19 @@ def test_play_quest_css_reserves_topbar_space():
     assert 'id="toggle-quest"' in html or 'data-toggle-quest' in html
 
 
+def test_narrow_play_quest_keeps_topbar_offset():
+    css = Path('src/desktop_robot/studio/static/game/game.css').read_text()
+    # 在 max-width:900px 块内，play 视图不得用 top:auto 取消顶栏避让
+    narrow = css.split('@media(max-width:900px)')[1]
+    assert 'body[data-view="play"] .play-quest' in narrow or 'data-view="play"] .play-quest' in narrow
+    # 允许 top:calc(var(--topbar-height) 或 padding-top；禁止仅 top:auto 且无替代避让
+    play_rules = [s for s in narrow.split('}') if 'play-quest' in s and 'data-view="play"' in s]
+    assert play_rules, 'missing play-quest override in narrow media'
+    joined = '}'.join(play_rules)
+    assert 'top:auto' not in joined or 'topbar-height' in joined
+    assert 'topbar-height' in joined or 'padding-top' in joined
+
+
 def test_assembly_cta_says_go_to_missions():
     html = Path('src/desktop_robot/studio/static/game.html').read_text()
     assert '前往委托板' in html
