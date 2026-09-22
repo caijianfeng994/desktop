@@ -65,7 +65,7 @@ $('#apply-starter-loadout').onclick=()=>{
   $('#close-loadout-power').onclick=()=>modal.close();
   return;
  }
- if(plan.equip.length===0&&plan.unequip.length===0&&!plan.missing.length){
+ if(plan.ok!==false&&plan.equip.length===0&&plan.unequip.length===0&&!plan.missing.length){
   showModal(`<span class="eyebrow">RECOMMENDED LOADOUT</span><h2>已满足首关推荐</h2><p>${esc(plan.note)}</p><p>无需改动装配。</p><button class="primary full" id="close-loadout-ready">知道了</button>`);
   $('#close-loadout-ready').onclick=()=>modal.close();
   return;

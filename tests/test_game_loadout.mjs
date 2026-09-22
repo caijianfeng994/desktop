@@ -70,7 +70,7 @@ test('already satisfied: empty equip/unequip with ready note', () => {
 
 test('UI modal: already-satisfied shows close-only without confirm act', () => {
   const handler = gameJs.split("$('#apply-starter-loadout')")[1].split("$('#scan')")[0];
-  assert.match(handler, /plan\.equip\.length===0\s*&&\s*plan\.unequip\.length===0\s*&&\s*!plan\.missing\.length/);
+  assert.match(handler, /plan\.ok!==false\s*&&\s*plan\.equip\.length===0\s*&&\s*plan\.unequip\.length===0\s*&&\s*!plan\.missing\.length/);
   assert.match(handler, /已满足/);
   assert.match(handler, /close-loadout-ready/);
   const readyBranch = handler.split('close-loadout-ready')[0].split('plan.equip.length===0')[1];
