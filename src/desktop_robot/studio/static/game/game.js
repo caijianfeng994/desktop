@@ -27,6 +27,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];co
 let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navigating=false;
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
 let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
+let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0};
 function toast(text){if(!text)return;$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4200)}
 function showModal(content){$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();icons(modal)}
 $('.modal-close').onclick=()=>modal.close();modal.addEventListener('click',e=>{if(e.target===modal){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close()}});
@@ -37,16 +38,13 @@ async function navigate(next,replace=false){
  await actionSettled;
  if(request!==navigationVersion)return;
  if(next==='play'&&!state.active)next='missions';
- if(next==='yard'){
-  toast('试验场下一任务');
-  // still show yard stub screen
- }
  const transition=state.active?(next==='play'?(state.active.paused?'resume':null):(!state.active.paused?'pause':null)):null;
  if(transition&&!await act(transition,{},true)){
   if(request===navigationVersion){navigating=false;history.replaceState({},'',`#${view}`)}
   return;
  }
  if(request!==navigationVersion)return;
+ const leavingYard=view==='yard'&&next!=='yard';
  navigating=false;view=next;document.body.dataset.view=next;
  $$('.screen').forEach(s=>s.hidden=s.id!==next);
  $$('.bottom-nav button').forEach(b=>{const selected=b.dataset.view===(next==='play'?'missions':next);b.classList.toggle('active',selected);b.setAttribute('aria-current',selected?'page':'false')});
@@ -54,6 +52,11 @@ async function navigate(next,replace=false){
  scene?.update(state,view);window.scrollTo(0,0);render();
  if(next==='build')await ensureBuildEditor();
  else editorScene?.resize();
+ if(next==='yard')await ensureYardScene();
+ else if(leavingYard){
+  yardKeys={forward:0,turn:0,joint:0};
+  yardScene?.setInput(0,0);
+ }
 }
 window.addEventListener('popstate',()=>navigate(location.hash.slice(1)||'home',true));
 document.addEventListener('click',e=>{const nav=e.target.closest('[data-view]');if(nav)navigate(nav.dataset.view)});
@@ -221,8 +224,103 @@ $('#build-save')?.addEventListener('click',async()=>{
  const data=await act('blueprint_replace',{blueprint:buildBp});
  if(data){window.__gamePartDefs=state.part_defs||[];syncBuildFromState(true)}
 });
-$('#build-enter-yard')?.addEventListener('click',e=>{
- // data-view=yard also handled by navigate; toast is in navigate
+$('#build-enter-yard')?.addEventListener('click',async()=>{
+ if(!state)return;
+ if(buildBp&&!await act('blueprint_replace',{blueprint:buildBp},true))return;
+ if(!await act('enter_yard'))return;
+ await navigate('yard');
+});
+
+function offerUpright(reason){
+ showModal(`<span class="eyebrow">TIPPED OVER</span><h2>倾覆了</h2><p>${esc(reason||'重心超出支撑面')}</p><div class="dialog-actions"><button class="dark" id="tip-dismiss">知道了</button><button class="primary" id="tip-upright">扶正</button></div>`);
+ $('#tip-dismiss').onclick=()=>modal.close();
+ $('#tip-upright').onclick=()=>{yardScene?.upright();modal.close();toast('已扶正')};
+}
+
+async function ensureYardScene(){
+ if(yardScene){
+  yardScene.resize();
+  yardScene.setBlueprint(activeBlueprint(),state?.part_defs||[]);
+  yardScene.reset();
+  return yardScene;
+ }
+ if(yardReady)return yardReady;
+ yardReady=(async()=>{
+  try{
+   const {YardScene}=await import('/game-assets/workshop/yardScene.mjs');
+   window.__gamePartDefs=state?.part_defs||[];
+   yardScene=new YardScene($('#yard-world'),{
+    getPartDefs:()=>state?.part_defs||window.__gamePartDefs||[],
+    onTip:(reason)=>{toast(reason);offerUpright(reason)},
+    onGrasp:(result)=>{if(result?.reason)toast(result.reason)},
+   });
+   yardScene.setBlueprint(activeBlueprint(),state?.part_defs||[]);
+   yardScene.reset();
+  }catch(error){
+   console.error(error);
+   toast('试验场未能启动');
+   yardReady=null;
+  }
+  return yardScene;
+ })();
+ return yardReady;
+}
+
+$('#yard-upright')?.addEventListener('click',()=>{yardScene?.upright();toast('已扶正')});
+$('#yard-reset')?.addEventListener('click',async()=>{
+ await act('yard_reset',{},true);
+ yardScene?.reset();
+ toast('已回到起点');
+});
+$('#yard-exit')?.addEventListener('click',async()=>{
+ if(!await act('exit_yard'))return;
+ syncBuildFromState(true);
+ await navigate('build');
+});
+$('#yard-challenge')?.addEventListener('click',()=>toast('抽屉挑战将在下一任务开放'));
+
+function syncYardDriveInput(){
+ if(view!=='yard'||!yardScene)return;
+ yardScene.setInput(yardKeys.forward,yardKeys.turn);
+ if(yardKeys.joint){
+  yardScene.setJointDelta(yardKeys.joint*0.04);
+ }
+}
+
+document.addEventListener('keydown',e=>{
+ if(modal.open||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||e.altKey||e.ctrlKey||e.metaKey)return;
+ if(view==='yard'){
+  const driveMap={
+   KeyW:['forward',1],ArrowUp:['forward',1],
+   KeyS:['forward',-1],ArrowDown:['forward',-1],
+   KeyA:['turn',1],ArrowLeft:['turn',1],
+   KeyD:['turn',-1],ArrowRight:['turn',-1],
+   KeyQ:['joint',1],KeyE:['joint',-1],
+  };
+  const bind=driveMap[e.code];
+  if(bind){e.preventDefault();yardKeys[bind[0]]=bind[1];syncYardDriveInput();return}
+  if(e.code==='Space'){e.preventDefault();const r=yardScene?.tryInteract();if(r?.reason)toast(r.reason);return}
+  if(e.code==='KeyR'){e.preventDefault();yardScene?.reset();act('yard_reset',{},true);toast('已回到起点');return}
+  return;
+ }
+ if(view!=='play'||navigating)return;
+ const directions={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};
+ if(directions[e.key]){e.preventDefault();routeVersion++;scene?.setRoute([]);if(!busy&&state.active){const d=directions[e.key];act('move',{position:state.active.position.map((v,i)=>v+d[i])},true)}}
+ else if(['1','2','3'].includes(e.key)){e.preventDefault();$('#'+({'1':'scan','2':'pick','3':'deliver'}[e.key])).click()}
+});
+document.addEventListener('keyup',e=>{
+ if(view!=='yard')return;
+ const driveMap={
+  KeyW:['forward',1],ArrowUp:['forward',1],
+  KeyS:['forward',-1],ArrowDown:['forward',-1],
+  KeyA:['turn',1],ArrowLeft:['turn',1],
+  KeyD:['turn',-1],ArrowRight:['turn',-1],
+  KeyQ:['joint',1],KeyE:['joint',-1],
+ };
+ const bind=driveMap[e.code];
+ if(!bind)return;
+ if(yardKeys[bind[0]]===bind[1])yardKeys[bind[0]]=0;
+ syncYardDriveInput();
 });
 
 function blockedSet(){return new Set([...state.world.blocked,...(state.equipped.includes('tracks')?[]:state.world.low)].map(p=>p.join(',')))}
@@ -251,6 +349,5 @@ async function walk(target){
  if(version===routeVersion)scene?.setRoute([]);
  if(result?.reason==='move_failed')toast('这一步没能走出去…');
 }
-document.addEventListener('keydown',e=>{if(view!=='play'||navigating||modal.open||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||e.altKey||e.ctrlKey||e.metaKey)return;const directions={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};if(directions[e.key]){e.preventDefault();routeVersion++;scene?.setRoute([]);if(!busy&&state.active){const d=directions[e.key];act('move',{position:state.active.position.map((v,i)=>v+d[i])},true)}}else if(['1','2','3'].includes(e.key)){e.preventDefault();$('#'+({'1':'scan','2':'pick','3':'deliver'}[e.key])).click()}});
 async function load(){try{const response=await fetch('/api/game');const data=await response.json();if(!data.ok)throw Error('存档加载失败');state=data.state;window.__gamePartDefs=state.part_defs||[];try{const {WorkshopScene}=await import('/game-assets/scene.js');scene=new WorkshopScene($('#world'),walk)}catch(error){console.error(error);const el=document.createElement('div');el.className='webgl-error';el.textContent='三维场景未能启动。请使用支持 WebGL 的浏览器并启用硬件加速；改装、图鉴和伙伴档案仍可使用。';$('#world').append(el)}$('#loading').hidden=true;navigate(location.hash.slice(1)||'home',true)}catch(error){$('#loading p').textContent='无法读取本地工坊，请确认 Studio 服务已启动。';$('#retry').hidden=false;$('#retry').onclick=()=>location.reload();console.error(error)}}
 load();

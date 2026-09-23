@@ -42,12 +42,28 @@
   <button type="button" class="dark" id="build-redo">重做</button>
   <button type="button" class="dark" id="build-apply-quad">应用四轮模板</button>
   <button type="button" class="primary" id="build-save">保存蓝图</button>
-  <button type="button" class="dark" id="build-enter-yard" data-view="yard">进入试验场</button>
+  <button type="button" class="dark" id="build-enter-yard">进入试验场</button>
  </div>
 </section>
 <section id="yard" class="screen" hidden>
- <div class="section-title"><span class="eyebrow">TEST YARD</span><h1>试验场筹备中。</h1><p>物理试验场将在下一任务开放。</p></div>
- <aside class="paper" style="position:absolute;left:3%;top:120px;max-width:320px"><p>当前可回到建造视图继续改结构。</p><button type="button" class="primary full" data-view="build">返回自由装配</button></aside>
+ <div class="section-title"><span class="eyebrow">TEST YARD</span><h1>物理试验场。</h1><p>试跑结构、窄门与抓取；失败可扶正或回起点。</p></div>
+ <div class="yard-center"><div id="yard-world" class="yard-world" aria-label="三维试验场"></div></div>
+ <aside class="yard-help paper">
+  <span class="eyebrow">CONTROLS</span>
+  <ul class="yard-keys">
+   <li><kbd>W/A/S/D</kbd> 或方向键 · 驾驶</li>
+   <li><kbd>Q</kbd> / <kbd>E</kbd> · 关节</li>
+   <li><kbd>Space</kbd> · 抓取 / 放下</li>
+   <li><kbd>R</kbd> · 回起点</li>
+  </ul>
+  <p class="tip">窄门约 0.25m：底盘过宽会被挡住。倾覆后点「扶正」。</p>
+ </aside>
+ <div class="yard-toolbar paper">
+  <button type="button" class="dark" id="yard-upright">扶正</button>
+  <button type="button" class="dark" id="yard-reset">回起点</button>
+  <button type="button" class="dark" id="yard-exit">回编辑</button>
+  <button type="button" class="primary" id="yard-challenge" disabled title="下一任务开放">开始抽屉挑战</button>
+ </div>
 </section>
 <section id="missions" class="screen" hidden>
  <div class="section-title"><span class="eyebrow">LITTLE ADVENTURES AWAIT</span><h1>今天，去哪里探险？</h1><p>带着你亲手装配的伙伴，完成桌面上的小小委托。</p></div>

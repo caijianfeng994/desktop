@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import sqlite3
 from pathlib import Path
@@ -31,10 +32,12 @@ def _part_card(defn) -> dict:
 
 
 def _part_def_min(defn) -> dict:
-    """编辑器最小零件定义：尺寸与连接点。"""
+    """编辑器 / 试验场最小零件定义：尺寸、质量、行为与连接点。"""
     return {
         "id": defn.id,
         "size_m": list(defn.size_m),
+        "mass_kg": float(defn.mass_kg),
+        "behaviors": sorted(defn.behaviors),
         "connection_points": [
             {
                 "id": point.id,
@@ -44,6 +47,15 @@ def _part_def_min(defn) -> dict:
             for point in defn.connection_points
         ],
     }
+
+
+def _active_blueprint_raw(state: dict) -> dict | None:
+    active_id = state.get("active_blueprint_id")
+    for raw in state.get("blueprints") or []:
+        if raw.get("id") == active_id:
+            return raw
+    blueprints = state.get("blueprints") or []
+    return blueprints[0] if blueprints else None
 
 
 PART_DEFS = [_part_def_min(d) for d in PART_DEFINITIONS.values()]
@@ -253,6 +265,31 @@ def apply_action(state: dict, payload: dict) -> str:
         if not found:
             raise GameError("当前没有可重命名的蓝图。")
         return "蓝图已改名。"
+    if action == "enter_yard":
+        active = _active_blueprint_raw(state)
+        if not active:
+            raise GameError("当前没有可带进试验场的蓝图。")
+        state["yard_snapshot"] = copy.deepcopy(active)
+        return "已进入试验场。试跑不会改动蓝图，回编辑可恢复快照。"
+    if action == "exit_yard":
+        snap = state.get("yard_snapshot")
+        if isinstance(snap, dict) and snap.get("id"):
+            blueprints = list(state.get("blueprints") or [])
+            restored = False
+            for i, existing in enumerate(blueprints):
+                if existing.get("id") == snap["id"]:
+                    blueprints[i] = copy.deepcopy(snap)
+                    restored = True
+                    break
+            if not restored:
+                blueprints.append(copy.deepcopy(snap))
+            state["blueprints"] = blueprints
+            state["active_blueprint_id"] = snap["id"]
+        state.pop("yard_snapshot", None)
+        return "已返回编辑。试验场姿态未写入蓝图。"
+    if action == "yard_reset":
+        # 客户端负责复位位姿与方块；服务端仅确认
+        return "试验场已复位。"
     if action == "appearance":
         if payload.get("accent") not in ("teal", "amber", "sage"):
             raise GameError("请选择已有配色。")

@@ -457,4 +457,45 @@ def test_snapshot_includes_part_defs(tmp_path):
     assert 'core' in by_id
     assert by_id['core']['size_m'] == [0.08, 0.08, 0.08]
     assert any(cp['id'] == 'mount_top' for cp in by_id['core']['connection_points'])
-    assert 'wheel' in by_id and 'gripper' in by_id
+    assert by_id['core']['mass_kg'] > 0
+    assert 'behaviors' in by_id['wheel']
+
+
+def test_enter_exit_yard_preserves_blueprint_id_and_instances(tmp_path):
+    from desktop_robot.game.templates import quad_chassis_arm_blueprint
+
+    store = GameStore(tmp_path)
+    before = store.get()
+    bp = quad_chassis_arm_blueprint().model_dump(mode='json')
+    bp['id'] = before['active_blueprint_id']
+    bp['name'] = '试验前机架'
+    state = action(store, 'blueprint_replace', blueprint=bp)
+    active_id = state['active_blueprint_id']
+    active = next(b for b in state['blueprints'] if b['id'] == active_id)
+    instance_ids = sorted(i['instance_id'] for i in active['instances'])
+    instance_count = len(active['instances'])
+
+    entered = action(store, 'enter_yard')
+    assert entered['yard_snapshot']['id'] == active_id
+    assert entered['yard_snapshot']['name'] == '试验前机架'
+    assert len(entered['yard_snapshot']['instances']) == instance_count
+
+    # 模拟试验场期间误改蓝图元数据；exit 应从快照恢复，且不写入运行姿态
+    with store.connect() as db:
+        raw = json.loads(db.execute('SELECT state FROM game WHERE id=1').fetchone()[0])
+        for b in raw['blueprints']:
+            if b['id'] == active_id:
+                b['name'] = '试验场运行中不应保留'
+                break
+        db.execute('UPDATE game SET state=? WHERE id=1', (json.dumps(raw, ensure_ascii=False),))
+
+    exited = action(store, 'exit_yard')
+    assert exited.get('yard_snapshot') is None
+    assert exited['active_blueprint_id'] == active_id
+    restored = next(b for b in exited['blueprints'] if b['id'] == active_id)
+    assert restored['name'] == '试验前机架'
+    assert sorted(i['instance_id'] for i in restored['instances']) == instance_ids
+    assert len(restored['instances']) == instance_count
+
+    reset_state = action(store, 'yard_reset')
+    assert reset_state['revision'] >= exited['revision']
