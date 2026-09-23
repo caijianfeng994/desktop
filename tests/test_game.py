@@ -386,3 +386,53 @@ def test_assembly_has_starter_loadout_button():
     handler = js.split("$('#apply-starter-loadout')")[1].split("$('#scan')")[0]
     assert "act('buy'" not in handler
     assert "act('equip'" in handler
+
+
+def test_blueprint_replace_accepts_quad_and_bumps_revision(tmp_path):
+    from desktop_robot.game.templates import quad_chassis_arm_blueprint
+
+    store = GameStore(tmp_path)
+    before = store.get()
+    rev = before['revision']
+    bp = quad_chassis_arm_blueprint().model_dump(mode='json')
+    # keep same id as active so replace is in-place by id
+    bp['id'] = before['active_blueprint_id']
+    state = action(store, 'blueprint_replace', blueprint=bp)
+    assert state['revision'] == rev + 1
+    active = next(b for b in state['blueprints'] if b['id'] == state['active_blueprint_id'])
+    assert sum(1 for i in active['instances'] if i['part_id'] == 'wheel') == 4
+    assert sum(1 for i in active['instances'] if i['part_id'] == 'revolute_joint') == 2
+    assert any(i['part_id'] == 'gripper' for i in active['instances'])
+
+
+def test_blueprint_replace_rejects_cycle_without_bumping_revision(tmp_path):
+    store = GameStore(tmp_path)
+    before = store.get()
+    rev = before['revision']
+    bad = {
+        'id': before['active_blueprint_id'],
+        'name': '坏环',
+        'root_instance_id': 'core-1',
+        'instances': [
+            {'instance_id': 'core-1', 'part_id': 'core', 'local_pose': {'x': 0, 'y': 0, 'z': 0, 'rx': 0, 'ry': 0, 'rz': 0}, 'params': {}},
+            {'instance_id': 'plate-1', 'part_id': 'plate', 'local_pose': {'x': 0, 'y': 0, 'z': 0, 'rx': 0, 'ry': 0, 'rz': 0}, 'params': {}},
+        ],
+        'connections': [
+            {'parent_instance_id': 'core-1', 'parent_point_id': 'mount_bottom', 'child_instance_id': 'plate-1', 'child_point_id': 'face_a', 'joint': 'fixed'},
+            {'parent_instance_id': 'plate-1', 'parent_point_id': 'face_b', 'child_instance_id': 'core-1', 'child_point_id': 'mount_top', 'joint': 'fixed'},
+        ],
+        'bindings': {},
+    }
+    with pytest.raises(GameError):
+        store.act(dict(action='blueprint_replace', revision=rev, blueprint=bad))
+    assert store.get()['revision'] == rev
+
+
+def test_blueprint_rename_updates_active_name(tmp_path):
+    store = GameStore(tmp_path)
+    before = store.get()
+    rev = before['revision']
+    state = action(store, 'blueprint_rename', name='我的机架')
+    assert state['revision'] == rev + 1
+    active = next(b for b in state['blueprints'] if b['id'] == state['active_blueprint_id'])
+    assert active['name'] == '我的机架'

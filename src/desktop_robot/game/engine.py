@@ -4,7 +4,13 @@ import json
 import sqlite3
 from pathlib import Path
 
-from desktop_robot.game.blueprints import Blueprint, classic_xiaofang_blueprint, structure_metrics
+from desktop_robot.game.blueprints import (
+    Blueprint,
+    classic_xiaofang_blueprint,
+    derived_equipped,
+    structure_metrics,
+    validate_blueprint,
+)
 from desktop_robot.game.parts import PART_DEFINITIONS
 from desktop_robot.passport.generate import generate_robot
 
@@ -183,6 +189,50 @@ def apply_action(state: dict, payload: dict) -> str:
             raise GameError("名字需要 1～16 个字。")
         state["name"] = name.strip()
         return "记住了，这是我的新名字。"
+    if action == "blueprint_replace":
+        raw_bp = payload.get("blueprint")
+        if not isinstance(raw_bp, dict):
+            raise GameError("需要提供蓝图对象。")
+        try:
+            bp = Blueprint.model_validate(raw_bp)
+        except Exception as exc:
+            raise GameError(f"蓝图格式无效：{exc}") from exc
+        errors = validate_blueprint(bp)
+        if errors:
+            raise GameError("蓝图校验失败：" + "；".join(f"{e.code}: {e.message}" for e in errors))
+        dumped = bp.model_dump(mode="json")
+        active_id = state.get("active_blueprint_id")
+        blueprints = list(state.get("blueprints") or [])
+        replaced = False
+        for i, existing in enumerate(blueprints):
+            if existing.get("id") == active_id or existing.get("id") == bp.id:
+                blueprints[i] = dumped
+                replaced = True
+                break
+        if not replaced:
+            blueprints.append(dumped)
+        state["blueprints"] = blueprints
+        state["active_blueprint_id"] = bp.id
+        try:
+            derived = derived_equipped(bp)
+            state["equipped"] = [p for p in derived if p in PART_BY_ID]
+        except Exception:
+            pass
+        return "蓝图已保存。"
+    if action == "blueprint_rename":
+        name = payload.get("name")
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 32:
+            raise GameError("蓝图名称需要 1～32 个字。")
+        active_id = state.get("active_blueprint_id")
+        found = False
+        for bp in state.get("blueprints") or []:
+            if bp.get("id") == active_id:
+                bp["name"] = name.strip()
+                found = True
+                break
+        if not found:
+            raise GameError("当前没有可重命名的蓝图。")
+        return "蓝图已改名。"
     if action == "appearance":
         if payload.get("accent") not in ("teal", "amber", "sage"):
             raise GameError("请选择已有配色。")
