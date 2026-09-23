@@ -436,3 +436,25 @@ def test_blueprint_rename_updates_active_name(tmp_path):
     assert state['revision'] == rev + 1
     active = next(b for b in state['blueprints'] if b['id'] == state['active_blueprint_id'])
     assert active['name'] == '我的机架'
+
+
+def test_build_page_has_editor_hooks():
+    html = Path('src/desktop_robot/studio/static/game.html').read_text()
+    assert 'id="build"' in html
+    assert 'id="build-world"' in html
+    assert 'id="build-undo"' in html
+    assert 'id="build-redo"' in html
+    js = Path('src/desktop_robot/studio/static/game/game.js').read_text()
+    assert 'editorScene' in js or 'templates.mjs' in js or 'buildQuadChassisArmTemplate' in js
+    assert "'build'" in js or '"build"' in js
+
+
+def test_snapshot_includes_part_defs(tmp_path):
+    store = GameStore(tmp_path)
+    state = store.get()
+    assert 'part_defs' in state
+    by_id = {p['id']: p for p in state['part_defs']}
+    assert 'core' in by_id
+    assert by_id['core']['size_m'] == [0.08, 0.08, 0.08]
+    assert any(cp['id'] == 'mount_top' for cp in by_id['core']['connection_points'])
+    assert 'wheel' in by_id and 'gripper' in by_id

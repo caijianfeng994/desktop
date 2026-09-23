@@ -30,6 +30,25 @@ def _part_card(defn) -> dict:
     )
 
 
+def _part_def_min(defn) -> dict:
+    """编辑器最小零件定义：尺寸与连接点。"""
+    return {
+        "id": defn.id,
+        "size_m": list(defn.size_m),
+        "connection_points": [
+            {
+                "id": point.id,
+                "pose": point.pose.model_dump(mode="json"),
+                "kinds": sorted(point.kinds),
+            }
+            for point in defn.connection_points
+        ],
+    }
+
+
+PART_DEFS = [_part_def_min(d) for d in PART_DEFINITIONS.values()]
+
+
 # 快照仍只暴露旧七件，避免 UI 一次塞满未实装零件
 LEGACY_UI_PART_IDS = ["camera", "arm", "arm_left", "wheels", "battery", "display", "tracks"]
 PARTS = [_part_card(PART_DEFINITIONS[i]) for i in LEGACY_UI_PART_IDS]
@@ -114,6 +133,7 @@ def snapshot(state: dict) -> dict:
         "ports": sum(PART_BY_ID[p]["ports"] for p in state["equipped"]),
         "level": 1 + state["xp"] // 40,
         "parts": PARTS,
+        "part_defs": PART_DEFS,
         "missions": MISSIONS,
         "world": {"size": 9, "home": HOME, "blocked": BLOCKED, "low": LOW_OBSTACLES},
     }

@@ -23,7 +23,31 @@
  <div class="section-title"><span class="eyebrow">MAKE SOMETHING WONDERFUL</span><h1>给灵感，一个身体。</h1><p>挑选零件，看看伙伴能做些什么。</p></div>
  <aside class="parts-panel paper"><div class="panel-heading"><h2><i data-icon="parts"></i> 零件库</h2><span id="owned-count"></span></div><div class="filters" id="part-filters"><button class="active" data-filter="全部">全部</button><button data-filter="感知">感知</button><button data-filter="动作">动作</button><button data-filter="能源">能源</button><button data-filter="互动">互动</button></div><div id="parts-grid" class="parts-grid"></div><p class="panel-foot">左右臂独立装卸（按正面左右）· 单臂即可搬运</p></aside>
  <div class="assembly-center"><span class="model-badge">小方 / MODULAR COMPANION</span><div class="drop-target" id="drop-target" aria-label="将零件拖到这里安装"></div><span class="rotate-hint"><i data-icon="rotate"></i> 拖动空白处旋转视角</span></div>
- <aside class="assembly-status paper"><div class="panel-heading"><h2><i data-icon="tool"></i> 装配状态</h2><span class="status-tag">实时同步</span></div><div class="meter-label">供电预算 <b id="power-label"></b></div><div class="meter"><span id="power-meter"></span></div><div class="meter-label">接口占用 <b id="port-label"></b></div><div id="port-dots" class="port-dots"></div><div class="divider"></div><span class="eyebrow">已解锁能力</span><div id="abilities" class="abilities"></div><p id="assembly-tip" class="tip"></p><button type="button" class="dark full" id="apply-starter-loadout">应用推荐装配（首关）</button><button class="primary full" data-view="missions">前往委托板 <i data-icon="play"></i></button><a class="text-link" href="/?track=studio">高级硬件装配 <i data-icon="arrow"></i></a></aside>
+ <aside class="assembly-status paper"><div class="panel-heading"><h2><i data-icon="tool"></i> 装配状态</h2><span class="status-tag">实时同步</span></div><div class="meter-label">供电预算 <b id="power-label"></b></div><div class="meter"><span id="power-meter"></span></div><div class="meter-label">接口占用 <b id="port-label"></b></div><div id="port-dots" class="port-dots"></div><div class="divider"></div><span class="eyebrow">已解锁能力</span><div id="abilities" class="abilities"></div><p id="assembly-tip" class="tip"></p><button type="button" class="dark full" id="apply-starter-loadout">应用推荐装配（首关）</button><button type="button" class="dark full" data-view="build">自由装配 <i data-icon="parts"></i></button><button class="primary full" data-view="missions">前往委托板 <i data-icon="play"></i></button><a class="text-link" href="/?track=studio">高级硬件装配 <i data-icon="arrow"></i></a></aside>
+</section>
+<section id="build" class="screen" hidden>
+ <div class="section-title"><span class="eyebrow">FREEFORM BLUEPRINT</span><h1>自由装配工位。</h1><p>点选零件与连接点，搭出你的机架。</p></div>
+ <aside class="build-parts paper"><div class="panel-heading"><h2><i data-icon="parts"></i> 自由零件</h2><span>点选后点连接点</span></div><div id="build-part-palette" class="build-palette">
+  <button type="button" class="build-part-btn" data-build-part="wheel">单轮</button>
+  <button type="button" class="build-part-btn" data-build-part="plate">板件</button>
+  <button type="button" class="build-part-btn" data-build-part="beam">连接杆</button>
+  <button type="button" class="build-part-btn" data-build-part="revolute_joint">转动关节</button>
+  <button type="button" class="build-part-btn" data-build-part="gripper">夹爪</button>
+  <button type="button" class="build-part-btn" data-build-part="pusher">推板</button>
+  <button type="button" class="build-part-btn" data-build-part="hook">钩子</button>
+ </div><p class="panel-foot">核心已在蓝图中 · 先选零件，再点高亮连接点</p></aside>
+ <div class="build-center"><div id="build-world" class="build-world" aria-label="三维蓝图编辑场景"></div><span class="rotate-hint"><i data-icon="rotate"></i> 拖动旋转 · 点击选中</span></div>
+ <div class="build-toolbar paper">
+  <button type="button" class="dark" id="build-undo">撤销</button>
+  <button type="button" class="dark" id="build-redo">重做</button>
+  <button type="button" class="dark" id="build-apply-quad">应用四轮模板</button>
+  <button type="button" class="primary" id="build-save">保存蓝图</button>
+  <button type="button" class="dark" id="build-enter-yard" data-view="yard">进入试验场</button>
+ </div>
+</section>
+<section id="yard" class="screen" hidden>
+ <div class="section-title"><span class="eyebrow">TEST YARD</span><h1>试验场筹备中。</h1><p>物理试验场将在下一任务开放。</p></div>
+ <aside class="paper" style="position:absolute;left:3%;top:120px;max-width:320px"><p>当前可回到建造视图继续改结构。</p><button type="button" class="primary full" data-view="build">返回自由装配</button></aside>
 </section>
 <section id="missions" class="screen" hidden>
  <div class="section-title"><span class="eyebrow">LITTLE ADVENTURES AWAIT</span><h1>今天，去哪里探险？</h1><p>带着你亲手装配的伙伴，完成桌面上的小小委托。</p></div>
@@ -46,7 +70,7 @@
  <div class="collection-layout"><div class="paper collection-parts"><div class="panel-heading"><h2>零件图鉴</h2><span id="collection-count"></span></div><div id="collection-grid"></div></div><div class="tools-stack"><a class="paper tool-card" href="/?track=studio"><i data-icon="tool"></i><div><h2>硬件工作台</h2><p>主控选型、端口接线、真实硬件技能</p></div><i data-icon="arrow"></i></a><a class="paper tool-card" href="/design.html"><i data-icon="blueprint"></i><div><h2>机器人结构设计</h2><p>尺寸、关节、结构清单与 URDF 导出</p></div><i data-icon="arrow"></i></a><a class="paper tool-card" href="/assembly-3d.html"><i data-icon="parts"></i><div><h2>3D 工程装配</h2><p>查看真实尺寸与毫米坐标</p></div><i data-icon="arrow"></i></a><a class="paper tool-card" href="/publish.html"><i data-icon="board"></i><div><h2>制作发布大厅</h2><p>发布机器人方案，领取制作需求</p></div><i data-icon="arrow"></i></a><p class="engineering-note">游戏零件与数值用于虚拟挑战。真实制作请进入硬件工作台，完成独立的工程校验。</p></div></div>
 </section>
 </main>
-<nav class="bottom-nav" aria-label="工坊导航"><button data-view="home" class="active"><i data-icon="home"></i><span>工坊</span></button><button data-view="assembly"><i data-icon="tool"></i><span>改装</span></button><button data-view="missions"><i data-icon="board"></i><span>委托</span><b id="task-dot"></b></button><button data-view="companion"><i data-icon="robot"></i><span>伙伴</span></button><button data-view="collection"><i data-icon="book"></i><span>图鉴</span></button></nav>
+<nav class="bottom-nav" aria-label="工坊导航"><button data-view="home" class="active"><i data-icon="home"></i><span>工坊</span></button><button data-view="assembly"><i data-icon="tool"></i><span>改装</span></button><button data-view="build"><i data-icon="parts"></i><span>自由装配</span></button><button data-view="missions"><i data-icon="board"></i><span>委托</span><b id="task-dot"></b></button><button data-view="companion"><i data-icon="robot"></i><span>伙伴</span></button><button data-view="collection"><i data-icon="book"></i><span>图鉴</span></button></nav>
 <div class="save-status" id="save-status"><span class="live-dot"></span> 本地工坊 · 自动保存</div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="loading" class="loading"><span class="loading-robot" data-icon="robot"></span><h2>正在打开你的小小工坊</h2><p>给伙伴一点准备的时间…</p><button hidden id="retry" class="primary">重新加载</button></div>

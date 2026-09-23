@@ -1,5 +1,24 @@
 import {findPath, followPath} from './pathfinding.mjs';
 import {planStarterLoadout} from './loadout.mjs';
+import {createHistory} from './editor/commandHistory.mjs';
+import {attachPart} from './editor/assemble.mjs';
+import {buildQuadChassisArmTemplate} from './editor/templates.mjs';
+
+const CHILD_POINT = {
+  wheel: 'hub',
+  plate: 'face_a',
+  beam: 'end_b',
+  revolute_joint: 'in',
+  gripper: 'mount',
+  pusher: 'mount',
+  hook: 'mount',
+  post: 'end_b',
+  battery: 'mount',
+  camera: 'mount',
+  display: 'mount',
+};
+const FREEFORM_PARTS = ['wheel', 'plate', 'beam', 'revolute_joint', 'gripper', 'pusher', 'hook'];
+const VIEWS = ['home', 'assembly', 'build', 'yard', 'missions', 'play', 'companion', 'collection'];
 
 const paths={robot:'M7 7V4h10v3M5 8h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Zm3 5v2m8-2v2M9 18h6M1 12v4m22-4v4',home:'m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9',tool:'m14 5 5-2-1 5-5 5-3-3 4-5ZM10 10l-7 7a2 2 0 0 0 3 3l7-7',board:'M9 4h6v4H9zM7 6H5v15h14V6h-2M8 12h8m-8 4h5',book:'M12 5C8 2 3 3 2 4v15c4-2 7-1 10 1 3-2 6-3 10-1V4c-4-2-7-1-10 1Zm0 0v15',coin:'m8 3 8 0 5 7-3 10H6L3 10 8 3Zm2 5h4l2 4-2 4h-4l-2-4 2-4Z',battery:'M3 6h16v12H3zM21 10v4m-10-6-3 5h5l-2 3',help:'M9 9a3 3 0 1 1 4 3c-1 0-1 1-1 2m0 3v.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',arrow:'M4 12h15m-6-6 6 6-6 6',pin:'m9 3 8 4-3 4v4l-8-4 3-2V3Zm0 10-4 8',parts:'m12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10L3 7m9 5 9-5m-9 5v10M7 5l9 5',scan:'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0Zm-3 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',arm:'M4 21h12M7 20v-6l5-4-4-5 3-3 6 7v4l-5 4v3M17 10l4 1v5m-1-5 2-3',wheels:'M5 7h14v9H5zM2 9v6m20-6v6M7 17v3m10-3v3M8 10h8',tracks:'M6 7h12a5 5 0 0 1 0 10H6A5 5 0 0 1 6 7Zm1 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z',face:'M3 4h18v15H3zM7 9v2m10-2v2M8 14q4 4 8 0M9 22h6',rotate:'M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 14-1l1 6M4 12l1 6a8 8 0 0 0 14-1',play:'m8 3 13 9-13 9V3Z',info:'M12 11v6m0-10v.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',move:'M12 2v20M2 12h20M8 6l4-4 4 4M8 18l4 4 4-4M6 8l-4 4 4 4m12-8 4 4-4 4',edit:'m4 15 12-12 5 5L9 20l-6 1 1-6Zm10-10 5 5',chat:'M4 3h16v14H9l-5 4V3Zm4 5h8m-8 4h5',blueprint:'M3 3h18v18H3zM7 3v3m4-3v2m4-2v3m4-3v2M7 11l4-3 6 4v6H7v-7Zm4-3v7h6',check:'m5 12 4 4L19 6',circle:'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z',star:'m12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 3-6Z',lock:'M6 10h12v11H6zM8 10V6a4 4 0 0 1 8 0v4m-4 5v2'};
 const icon=name=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.parts}"/></svg>`;
@@ -7,16 +26,21 @@ function icons(root=document){root.querySelectorAll('[data-icon]').forEach(el=>{
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navigating=false;
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
+let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
 function toast(text){if(!text)return;$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4200)}
 function showModal(content){$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();icons(modal)}
 $('.modal-close').onclick=()=>modal.close();modal.addEventListener('click',e=>{if(e.target===modal){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close()}});
 async function navigate(next,replace=false){
  if(!state)return;
- if(!['home','assembly','missions','play','companion','collection'].includes(next))next='home';
+ if(!VIEWS.includes(next))next='home';
  const request=++navigationVersion;navigating=true;routeVersion++;scene?.setRoute([]);
  await actionSettled;
  if(request!==navigationVersion)return;
  if(next==='play'&&!state.active)next='missions';
+ if(next==='yard'){
+  toast('试验场下一任务');
+  // still show yard stub screen
+ }
  const transition=state.active?(next==='play'?(state.active.paused?'resume':null):(!state.active.paused?'pause':null)):null;
  if(transition&&!await act(transition,{},true)){
   if(request===navigationVersion){navigating=false;history.replaceState({},'',`#${view}`)}
@@ -28,6 +52,8 @@ async function navigate(next,replace=false){
  $$('.bottom-nav button').forEach(b=>{const selected=b.dataset.view===(next==='play'?'missions':next);b.classList.toggle('active',selected);b.setAttribute('aria-current',selected?'page':'false')});
  const hash=`#${next}`;if(location.hash!==hash)history[replace?'replaceState':'pushState']({},'',hash);
  scene?.update(state,view);window.scrollTo(0,0);render();
+ if(next==='build')await ensureBuildEditor();
+ else editorScene?.resize();
 }
 window.addEventListener('popstate',()=>navigate(location.hash.slice(1)||'home',true));
 document.addEventListener('click',e=>{const nav=e.target.closest('[data-view]');if(nav)navigate(nav.dataset.view)});
@@ -89,6 +115,116 @@ $('#toggle-quest').onclick=()=>{const panel=$('.play-quest'),btn=$('#toggle-ques
 $('#rename').onclick=()=>{showModal(`<span class="eyebrow">HELLO, LITTLE FRIEND</span><h2>给伙伴一个名字</h2><form id="name-form"><input name="name" aria-label="伙伴名字" maxlength="16" required value="${esc(state.name)}"><button class="primary full">保存名字</button></form>`);$('#name-form').onsubmit=async e=>{e.preventDefault();if(await act('rename',{name:new FormData(e.target).get('name')}))modal.close()}};
 $('#help').onclick=()=>showModal('<span class="eyebrow">WELCOME TO YOUR LITTLE WORKSHOP</span><h2>从一个小小的想法开始</h2><p>① 在「改装」安装摄像头和任意一侧机械臂。左右臂可独立装卸，单臂就能搬运；双臂需要扩容电池。功耗不够时，可以先卸下表情屏幕，或解锁并安装扩容电池。</p><p>② 在「委托」接受任务。点击桌面移动，靠近琥珀色光点后按 1 扫描、按 2 搬运。</p><p>③ 带着核心回到青色充电站，按 3 交付。获得零件币、默契和回忆。</p><p>工坊顶部电池可以充电；图鉴里可以进入真实硬件与工程工具。进度保存在当前电脑的 Studio 数据目录中。</p>');
 $('#open-chat').onclick=async()=>{if(!state.robot_id){if(!await act('charge',{},true))return}showModal(`<span class="eyebrow">A MOMENT WITH ${esc(state.name)}</span><h2>和${esc(state.name)}聊聊</h2><p id="chat-reply">我在这里。今天想聊点什么？</p><form id="chat-form"><input name="text" aria-label="对伙伴说的话" placeholder="你好，小伙伴" maxlength="500" required autocomplete="off"><button class="primary full">发送</button></form><a class="text-link" href="/robot.html?id=${encodeURIComponent(state.robot_id)}">打开完整形象与对话页 →</a>`);$('#chat-form').onsubmit=async e=>{e.preventDefault();const form=e.target,button=form.querySelector('button');button.disabled=true;button.textContent='伙伴正在想…';try{const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({robot_id:state.robot_id,text:new FormData(form).get('text')})});const data=await res.json();$('#chat-reply').textContent=data.ok?data.reply:data.reason||'暂时没能回应，再试一次吧。';if(data.ok)form.reset()}catch{$('#chat-reply').textContent='连接暂时中断，请稍后重试。'}finally{button.disabled=false;button.textContent='发送'}}};
+
+function activeBlueprint(){
+ if(!state)return null;
+ const id=state.active_blueprint_id;
+ return (state.blueprints||[]).find(b=>b.id===id)||(state.blueprints||[])[0]||null;
+}
+function syncBuildFromState(resetHistory=false){
+ const bp=activeBlueprint();
+ if(!bp)return;
+ buildBp=structuredClone(bp);
+ if(resetHistory){buildHistory=createHistory();buildHistory.push(buildBp)}
+ else if(!buildHistory.canUndo&&!buildHistory.canRedo)buildHistory.push(buildBp);
+ buildSelected=buildBp.root_instance_id;
+ editorScene?.setBlueprint(buildBp);
+ editorScene?.setSelected(buildSelected);
+ updateBuildChrome();
+}
+function updateBuildChrome(){
+ $$('.build-part-btn').forEach(b=>b.classList.toggle('active',b.dataset.buildPart===pendingBuildPart));
+ const undo=$('#build-undo'),redo=$('#build-redo');
+ if(undo)undo.disabled=!buildHistory.canUndo;
+ if(redo)redo.disabled=!buildHistory.canRedo;
+}
+function applyBuildBlueprint(next,{push=true}={}){
+ buildBp=next;
+ if(push)buildHistory.push(buildBp);
+ editorScene?.setBlueprint(buildBp);
+ if(buildSelected&&!(buildBp.instances||[]).some(i=>i.instance_id===buildSelected)){
+  buildSelected=buildBp.root_instance_id;
+ }
+ editorScene?.setSelected(buildSelected);
+ updateBuildChrome();
+}
+async function ensureBuildEditor(){
+ if(editorScene){editorScene.resize();syncBuildFromState(false);return editorScene}
+ if(editorReady)return editorReady;
+ editorReady=(async()=>{
+  try{
+   const {BlueprintEditorScene}=await import('/game-assets/workshop/editorScene.mjs');
+   window.__gamePartDefs=state?.part_defs||[];
+   editorScene=new BlueprintEditorScene($('#build-world'),{
+    getPartDefs:()=>state?.part_defs||window.__gamePartDefs||[],
+    onSelect:(id)=>{buildSelected=id;editorScene.setSelected(id);pendingBuildPart=null;updateBuildChrome()},
+    onPickPoint:(instanceId,pointId)=>{
+     if(!pendingBuildPart||!buildBp){toast('先在左侧选择要安装的零件');return}
+     const childPoint=CHILD_POINT[pendingBuildPart];
+     if(!childPoint){toast('未知零件连接点');return}
+     try{
+      const next=attachPart(buildBp,{
+       partId:pendingBuildPart,
+       parentInstanceId:instanceId,
+       parentPointId:pointId,
+       childPointId:childPoint,
+      });
+      applyBuildBlueprint(next);
+      pendingBuildPart=null;
+      updateBuildChrome();
+      toast('零件已挂上');
+     }catch(err){toast(err.message||'无法连接')}
+    },
+   });
+   syncBuildFromState(true);
+  }catch(error){
+   console.error(error);
+   toast('建造场景未能启动');
+   editorReady=null;
+  }
+  return editorScene;
+ })();
+ return editorReady;
+}
+$('#build-part-palette')?.addEventListener('click',e=>{
+ const btn=e.target.closest('[data-build-part]');
+ if(!btn)return;
+ pendingBuildPart=btn.dataset.buildPart;
+ if(!FREEFORM_PARTS.includes(pendingBuildPart))return;
+ if(!buildSelected)buildSelected=buildBp?.root_instance_id||null;
+ editorScene?.setSelected(buildSelected);
+ updateBuildChrome();
+ toast(`已选 ${btn.textContent}：点击高亮连接点放置`);
+});
+$('#build-undo')?.addEventListener('click',()=>{
+ const prev=buildHistory.undo();
+ if(!prev){toast('没有可撤销的步骤');return}
+ applyBuildBlueprint(prev,{push:false});
+});
+$('#build-redo')?.addEventListener('click',()=>{
+ const next=buildHistory.redo();
+ if(!next){toast('没有可重做的步骤');return}
+ applyBuildBlueprint(next,{push:false});
+});
+$('#build-apply-quad')?.addEventListener('click',()=>{
+ if(!state)return;
+ const active=activeBlueprint();
+ const tpl=buildQuadChassisArmTemplate({
+  id:active?.id||'quad-chassis-arm',
+  name:active?.name||'四轮机架与两关节臂',
+ });
+ applyBuildBlueprint(tpl);
+ toast('已应用四轮+臂模板（记得保存）');
+});
+$('#build-save')?.addEventListener('click',async()=>{
+ if(!buildBp){toast('没有可保存的蓝图');return}
+ const data=await act('blueprint_replace',{blueprint:buildBp});
+ if(data){window.__gamePartDefs=state.part_defs||[];syncBuildFromState(true)}
+});
+$('#build-enter-yard')?.addEventListener('click',e=>{
+ // data-view=yard also handled by navigate; toast is in navigate
+});
+
 function blockedSet(){return new Set([...state.world.blocked,...(state.equipped.includes('tracks')?[]:state.world.low)].map(p=>p.join(',')))}
 async function walk(target){
  if(view!=='play'||!state.active||navigating)return;
@@ -116,5 +252,5 @@ async function walk(target){
  if(result?.reason==='move_failed')toast('这一步没能走出去…');
 }
 document.addEventListener('keydown',e=>{if(view!=='play'||navigating||modal.open||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||e.altKey||e.ctrlKey||e.metaKey)return;const directions={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};if(directions[e.key]){e.preventDefault();routeVersion++;scene?.setRoute([]);if(!busy&&state.active){const d=directions[e.key];act('move',{position:state.active.position.map((v,i)=>v+d[i])},true)}}else if(['1','2','3'].includes(e.key)){e.preventDefault();$('#'+({'1':'scan','2':'pick','3':'deliver'}[e.key])).click()}});
-async function load(){try{const response=await fetch('/api/game');const data=await response.json();if(!data.ok)throw Error('存档加载失败');state=data.state;try{const {WorkshopScene}=await import('/game-assets/scene.js');scene=new WorkshopScene($('#world'),walk)}catch(error){console.error(error);const el=document.createElement('div');el.className='webgl-error';el.textContent='三维场景未能启动。请使用支持 WebGL 的浏览器并启用硬件加速；改装、图鉴和伙伴档案仍可使用。';$('#world').append(el)}$('#loading').hidden=true;navigate(location.hash.slice(1)||'home',true)}catch(error){$('#loading p').textContent='无法读取本地工坊，请确认 Studio 服务已启动。';$('#retry').hidden=false;$('#retry').onclick=()=>location.reload();console.error(error)}}
+async function load(){try{const response=await fetch('/api/game');const data=await response.json();if(!data.ok)throw Error('存档加载失败');state=data.state;window.__gamePartDefs=state.part_defs||[];try{const {WorkshopScene}=await import('/game-assets/scene.js');scene=new WorkshopScene($('#world'),walk)}catch(error){console.error(error);const el=document.createElement('div');el.className='webgl-error';el.textContent='三维场景未能启动。请使用支持 WebGL 的浏览器并启用硬件加速；改装、图鉴和伙伴档案仍可使用。';$('#world').append(el)}$('#loading').hidden=true;navigate(location.hash.slice(1)||'home',true)}catch(error){$('#loading p').textContent='无法读取本地工坊，请确认 Studio 服务已启动。';$('#retry').hidden=false;$('#retry').onclick=()=>location.reload();console.error(error)}}
 load();
