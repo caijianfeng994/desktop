@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import {buildSimFromBlueprint} from '../simulation/body.mjs';
 import {stepDrive} from '../simulation/drive.mjs';
 import {checkTip} from '../simulation/tip.mjs';
-import {createYardWorld} from '../simulation/world.mjs';
+import {DRAWER_BLOCK_ID, createYardWorld} from '../simulation/world.mjs';
 import {tryDrag, tryGrasp, tryPush} from '../simulation/grasp.mjs';
 import {PART_SIZES, worldPosesFromBlueprint} from './editorScene.mjs';
 
@@ -18,6 +18,8 @@ const COLORS = {
   door: 0x6a8f88,
   ramp: 0xc4a574,
   block: 0xd9893a,
+  drawer: 0x8a7460,
+  receive: 0x5a9e8a,
   robot: 0xc9b896,
   core: 0x477e7c,
 };
@@ -51,6 +53,7 @@ function toolLink(sim) {
  * @param {{
  *   onTip?: (reason: string) => void,
  *   onGrasp?: (result: {success:boolean, reason:string}) => void,
+ *   onChallengeReady?: (payload: {block_id:string, region:string, speed:number}) => void,
  *   getPartDefs?: () => object[],
  * }} [callbacks]
  */
@@ -67,6 +70,9 @@ export class YardScene {
     this.heldBlockId = null;
     this.input = {forward: 0, turn: 0};
     this.tipped = false;
+    this._prevBlockPos = null;
+    this._blockSpeed = 0;
+    this._challengeReadySent = false;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xe8dac4);
@@ -182,6 +188,49 @@ export class YardScene {
       ((r.minZ + r.maxZ) / 2) * SCALE,
     );
     this.env.add(ramp);
+
+    const d = this.world.drawerSlot;
+    const drawer = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        (d.maxX - d.minX) * SCALE,
+        Math.max(0.04, (d.maxY - d.minY) * SCALE),
+        (d.maxZ - d.minZ) * SCALE,
+      ),
+      new THREE.MeshStandardMaterial({
+        color: COLORS.drawer,
+        roughness: 0.85,
+        transparent: true,
+        opacity: 0.55,
+      }),
+    );
+    drawer.position.set(
+      ((d.minX + d.maxX) / 2) * SCALE,
+      ((d.minY + d.maxY) / 2) * SCALE,
+      ((d.minZ + d.maxZ) / 2) * SCALE,
+    );
+    this.env.add(drawer);
+
+    const rz = this.world.receiveZone;
+    const receive = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        (rz.maxX - rz.minX) * SCALE,
+        0.02 * SCALE,
+        (rz.maxZ - rz.minZ) * SCALE,
+      ),
+      new THREE.MeshStandardMaterial({
+        color: COLORS.receive,
+        roughness: 0.7,
+        transparent: true,
+        opacity: 0.45,
+      }),
+    );
+    receive.position.set(
+      ((rz.minX + rz.maxX) / 2) * SCALE,
+      0.01 * SCALE,
+      ((rz.minZ + rz.maxZ) / 2) * SCALE,
+    );
+    this.env.add(receive);
+
     this._syncBlocks();
   }
 
@@ -256,14 +305,22 @@ export class YardScene {
     };
   }
 
+  _targetBlock() {
+    if (this.world.challengeMode) {
+      return this.world.blocks.find((b) => b.id === DRAWER_BLOCK_ID) || this.world.blocks[0];
+    }
+    return this.world.blocks[0];
+  }
+
   tryInteract() {
-    const block = this.world.blocks[0];
+    const block = this._targetBlock();
     if (!block) return {success: false, reason: '场上没有方块'};
     if (this.heldBlockId) {
+      const held = this.world.blocks.find((b) => b.id === this.heldBlockId) || block;
       const tool = this._toolWorld() || {x: this.drive.x, y: 0.1, z: this.drive.z, yaw: this.drive.yaw};
-      block.x = tool.x;
-      block.y = 0.04;
-      block.z = tool.z;
+      held.x = tool.x;
+      held.y = 0.04;
+      held.z = tool.z;
       this.heldBlockId = null;
       this._syncBlocks();
       return {success: true, reason: '已放下方块'};
@@ -296,6 +353,26 @@ export class YardScene {
     return result;
   }
 
+  setChallengeMode(on) {
+    this.world.setChallengeMode(!!on);
+    this.heldBlockId = null;
+    this._prevBlockPos = null;
+    this._blockSpeed = 0;
+    this._challengeReadySent = false;
+    this._syncBlocks();
+  }
+
+  /** 当前目标方块速度与是否在接收区（供提交按钮使用） */
+  challengeStatus() {
+    const block = this.world.blocks.find((b) => b.id === DRAWER_BLOCK_ID);
+    if (!block) return null;
+    return {
+      block_id: block.id,
+      region: this.world.blockInReceive(block) ? 'receive' : 'other',
+      speed: this._blockSpeed,
+    };
+  }
+
   reset() {
     this.world.reset();
     this.drive.x = this.world.spawn.x;
@@ -304,6 +381,9 @@ export class YardScene {
     this.heldBlockId = null;
     this.tipped = false;
     this.jointAngles = {};
+    this._prevBlockPos = null;
+    this._blockSpeed = 0;
+    this._challengeReadySent = false;
     this._syncBlocks();
     this._rebuildRobot();
   }
@@ -366,6 +446,35 @@ export class YardScene {
     block.z = tool.z;
   }
 
+  _trackChallenge(dt) {
+    if (!this.world.challengeMode) return;
+    const block = this.world.blocks.find((b) => b.id === DRAWER_BLOCK_ID);
+    if (!block) return;
+    if (this._prevBlockPos) {
+      const dx = block.x - this._prevBlockPos.x;
+      const dy = block.y - this._prevBlockPos.y;
+      const dz = block.z - this._prevBlockPos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      this._blockSpeed = dt > 1e-6 ? dist / dt : 0;
+    } else {
+      this._blockSpeed = 0;
+    }
+    this._prevBlockPos = {x: block.x, y: block.y, z: block.z};
+    if (this.heldBlockId === block.id) return;
+    if (
+      !this._challengeReadySent &&
+      this.world.blockInReceive(block) &&
+      this._blockSpeed <= 0.05
+    ) {
+      this._challengeReadySent = true;
+      this.callbacks.onChallengeReady?.({
+        block_id: block.id,
+        region: 'receive',
+        speed: this._blockSpeed,
+      });
+    }
+  }
+
   _checkTip() {
     if (!this.sim || this.tipped) return;
     const held = this.heldBlockId
@@ -402,6 +511,7 @@ export class YardScene {
     if (!this.tipped) {
       stepDrive(this.drive, this.input, dt);
       this._updateHeld();
+      this._trackChallenge(dt);
       this._checkTip();
     }
     this.robotRoot.position.set(this.drive.x * SCALE, 0, this.drive.z * SCALE);

@@ -4,6 +4,7 @@ import copy
 import json
 import sqlite3
 from pathlib import Path
+from uuid import uuid4
 
 from desktop_robot.game.blueprints import (
     Blueprint,
@@ -12,6 +13,7 @@ from desktop_robot.game.blueprints import (
     structure_metrics,
     validate_blueprint,
 )
+from desktop_robot.game.missions_open import CHALLENGE, OPEN_CHALLENGES, evaluate_drawer_result
 from desktop_robot.game.parts import PART_DEFINITIONS
 from desktop_robot.passport.generate import generate_robot
 
@@ -92,9 +94,11 @@ def initial_state() -> dict:
         owned=[p["id"] for p in PARTS if p["owned"]],
         equipped=equipped,
         completed=[],
+        completed_challenges=[],
         xp=0,
         memories=[],
         active=None,
+        challenge=None,
         accent="teal",
         blueprints=[bp.model_dump(mode="json")],
         active_blueprint_id=bp.id,
@@ -113,6 +117,8 @@ def migrate_state(state: dict) -> dict:
         state["blueprints"] = [bp.model_dump(mode="json")]
         state["active_blueprint_id"] = bp.id
         state["version"] = 3
+    state.setdefault("completed_challenges", [])
+    state.setdefault("challenge", None)
     return state
 
 
@@ -147,6 +153,7 @@ def snapshot(state: dict) -> dict:
         "parts": PARTS,
         "part_defs": PART_DEFS,
         "missions": MISSIONS,
+        "open_challenges": list(OPEN_CHALLENGES),
         "world": {"size": 9, "home": HOME, "blocked": BLOCKED, "low": LOW_OBSTACLES},
     }
     active_id = state.get("active_blueprint_id")
@@ -290,6 +297,47 @@ def apply_action(state: dict, payload: dict) -> str:
     if action == "yard_reset":
         # 客户端负责复位位姿与方块；服务端仅确认
         return "试验场已复位。"
+    if action == "start_challenge":
+        mission_id = payload.get("mission")
+        if mission_id != CHALLENGE["id"]:
+            raise GameError("找不到这个开放挑战。")
+        bp = _active_blueprint_raw(state)
+        if not bp:
+            raise GameError("当前没有可带进挑战的蓝图。")
+        state["challenge"] = {
+            "id": CHALLENGE["id"],
+            "run_id": uuid4().hex,
+            "blueprint_id": bp.get("id"),
+            "blueprint_version": int(bp.get("version") or bp.get("revision") or 1),
+            "started": True,
+        }
+        return "抽屉挑战已开始：把方块运到接收区并停稳。"
+    if action == "submit_challenge":
+        challenge = state.get("challenge")
+        if not isinstance(challenge, dict) or not challenge.get("run_id"):
+            raise GameError("请先开始抽屉挑战。")
+        if payload.get("run_id") != challenge["run_id"]:
+            raise GameError("挑战回合已过期，请重新开始。")
+        result = evaluate_drawer_result(
+            {
+                "block_id": payload.get("block_id"),
+                "region": payload.get("region"),
+                "speed": payload.get("speed"),
+            }
+        )
+        if not result["ok"]:
+            raise GameError(result["reason"])
+        completed = state.setdefault("completed_challenges", [])
+        first = CHALLENGE["id"] not in completed
+        if first:
+            state["coins"] += int(CHALLENGE["reward"])
+            state["xp"] += int(CHALLENGE["xp"])
+            completed.append(CHALLENGE["id"])
+            return (
+                f"挑战完成！获得 {CHALLENGE['reward']} 零件币和 "
+                f"{CHALLENGE['xp']} 默契。"
+            )
+        return "再次完成挑战！首次奖励已经领取，这次留下新的练习。"
     if action == "appearance":
         if payload.get("accent") not in ("teal", "amber", "sage"):
             raise GameError("请选择已有配色。")

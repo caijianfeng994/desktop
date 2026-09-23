@@ -27,7 +27,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];co
 let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navigating=false;
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
 let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
-let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0};
+let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0},yardChallengeSubmitting=false;
 function toast(text){if(!text)return;$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4200)}
 function showModal(content){$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();icons(modal)}
 $('.modal-close').onclick=()=>modal.close();modal.addEventListener('click',e=>{if(e.target===modal){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close()}});
@@ -242,6 +242,7 @@ async function ensureYardScene(){
   yardScene.resize();
   yardScene.setBlueprint(activeBlueprint(),state?.part_defs||[]);
   yardScene.reset();
+  syncYardChallengeUi();
   return yardScene;
  }
  if(yardReady)return yardReady;
@@ -253,9 +254,11 @@ async function ensureYardScene(){
     getPartDefs:()=>state?.part_defs||window.__gamePartDefs||[],
     onTip:(reason)=>{toast(reason);offerUpright(reason)},
     onGrasp:(result)=>{if(result?.reason)toast(result.reason)},
+    onChallengeReady:(payload)=>submitYardChallenge(payload),
    });
    yardScene.setBlueprint(activeBlueprint(),state?.part_defs||[]);
    yardScene.reset();
+   syncYardChallengeUi();
   }catch(error){
    console.error(error);
    toast('试验场未能启动');
@@ -264,6 +267,46 @@ async function ensureYardScene(){
   return yardScene;
  })();
  return yardReady;
+}
+
+function syncYardChallengeUi(){
+ const ch=state?.challenge;
+ const on=!!(ch&&ch.started&&ch.id==='drawer-block');
+ $('#yard-challenge')&&($('#yard-challenge').textContent=on?'挑战进行中':'开始抽屉挑战');
+ $('#yard-challenge')&&($('#yard-challenge').disabled=!!on);
+ const submit=$('#yard-submit-challenge');
+ if(submit)submit.hidden=!on;
+ if(yardScene){
+  if(on&&!yardScene.world?.challengeMode)yardScene.setChallengeMode(true);
+  if(!on&&yardScene.world?.challengeMode)yardScene.setChallengeMode(false);
+ }
+}
+
+function offerChallengeSuccess(first,challenge){
+ const reward=first?(challenge?.reward??150):0;
+ const xp=first?(challenge?.xp??60):0;
+ showModal(`<div class="success-mark">${icon('star')}</div><span class="eyebrow" style="justify-content:center;margin-top:15px">DRAWER CHALLENGE</span><h2 style="text-align:center">${first?'抽屉里的方块，到手了。':'又一次稳稳送达。'}</h2><p style="text-align:center">夹、推或拖——结构决定解法，清单不设门槛。</p><div class="reward-summary"><div><strong>+${reward}</strong><small>零件币${first?'':' · 首次奖励已领取'}</small></div><div><strong>+${xp}</strong><small>伙伴默契</small></div></div><div class="dialog-actions"><button class="primary" id="challenge-ok">继续试验</button></div>`);
+ $('#challenge-ok').onclick=()=>modal.close();
+}
+
+async function submitYardChallenge(payload){
+ if(yardChallengeSubmitting||!state?.challenge?.run_id)return;
+ const status=payload||yardScene?.challengeStatus?.();
+ if(!status||status.region!=='receive'||!(status.speed<=0.05)){
+  toast(status?.region!=='receive'?'请先把方块放到接收区':'方块还在移动，请等它停稳');
+  return;
+ }
+ yardChallengeSubmitting=true;
+ const challenge=(state.open_challenges||[]).find(c=>c.id==='drawer-block')||{reward:150,xp:60};
+ const first=!(state.completed_challenges||[]).includes('drawer-block');
+ const data=await act('submit_challenge',{
+  run_id:state.challenge.run_id,
+  block_id:status.block_id,
+  region:'receive',
+  speed:status.speed,
+ },true);
+ yardChallengeSubmitting=false;
+ if(data)offerChallengeSuccess(first,challenge);
 }
 
 $('#yard-upright')?.addEventListener('click',()=>{yardScene?.upright();toast('已扶正')});
@@ -277,7 +320,16 @@ $('#yard-exit')?.addEventListener('click',async()=>{
  syncBuildFromState(true);
  await navigate('build');
 });
-$('#yard-challenge')?.addEventListener('click',()=>toast('抽屉挑战将在下一任务开放'));
+$('#yard-challenge')?.addEventListener('click',async()=>{
+ if(!state)return;
+ const data=await act('start_challenge',{mission:'drawer-block'});
+ if(!data)return;
+ yardScene?.setChallengeMode(true);
+ yardScene?.reset();
+ syncYardChallengeUi();
+ toast('把抽屉缝里的方块运到青色接收区并停稳');
+});
+$('#yard-submit-challenge')?.addEventListener('click',()=>submitYardChallenge());
 
 function syncYardDriveInput(){
  if(view!=='yard'||!yardScene)return;

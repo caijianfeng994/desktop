@@ -1,12 +1,34 @@
 /**
- * 试验场静态世界：围墙、窄门、坡道、练习方块与起点。
+ * 试验场静态世界：围墙、窄门、坡道、练习方块、抽屉缝与接收区。
  * 窄门净宽约 0.25m：窄底盘可通过，宽底盘由 stepDrive 的 width 半宽夹墙挡住。
  */
+
+export const DRAWER_BLOCK_ID = 'drawer-cube';
 
 const DOOR_WIDTH = 0.25;
 const DOOR_Z = 1.15;
 const DOOR_THICK = 0.12;
 const ARENA = 2.4;
+
+/** 抽屉缝：方块起始于缝内，开口朝 +X（试验场负 X 侧矮柜） */
+export const DRAWER_SLOT = {
+  minX: -1.55,
+  maxX: -1.05,
+  minY: 0,
+  maxY: 0.12,
+  minZ: -0.55,
+  maxZ: -0.15,
+};
+
+/** 接收区：靠近起点的工坊落点 */
+export const RECEIVE_ZONE = {
+  minX: -0.28,
+  maxX: 0.28,
+  minY: 0,
+  maxY: 0.2,
+  minZ: -1.55,
+  maxZ: -1.15,
+};
 
 function cloneBlock(b) {
   return {
@@ -19,13 +41,29 @@ function cloneBlock(b) {
   };
 }
 
+function pointInAabb(x, y, z, box) {
+  return (
+    x >= box.minX &&
+    x <= box.maxX &&
+    y >= box.minY &&
+    y <= box.maxY &&
+    z >= box.minZ &&
+    z <= box.maxZ
+  );
+}
+
 /**
  * @returns {{
  *   walls: {minX:number,maxX:number,minZ:number,maxZ:number}[],
  *   ramp: {minX:number,maxX:number,minY:number,maxY:number,minZ:number,maxZ:number},
  *   narrowDoor: {minX:number,maxX:number,z:number,width:number},
+ *   drawerSlot: typeof DRAWER_SLOT,
+ *   receiveZone: typeof RECEIVE_ZONE,
  *   blocks: {id:string,x:number,y:number,z:number,size:number[],mass:number}[],
  *   spawn: {x:number,z:number,yaw:number},
+ *   challengeMode: boolean,
+ *   setChallengeMode: (on:boolean) => void,
+ *   blockInReceive: (block:{x:number,y?:number,z:number}) => boolean,
  *   reset: () => void,
  * }}
  */
@@ -69,7 +107,7 @@ export function createYardWorld() {
     maxZ: 0.55,
   };
 
-  const initialBlocks = [
+  const practiceBlocks = [
     {
       id: 'practice-block',
       x: -0.35,
@@ -80,13 +118,54 @@ export function createYardWorld() {
     },
   ];
 
-  const blocks = initialBlocks.map(cloneBlock);
+  const challengeBlocks = [
+    {
+      id: DRAWER_BLOCK_ID,
+      x: (DRAWER_SLOT.minX + DRAWER_SLOT.maxX) / 2,
+      y: 0.04,
+      z: (DRAWER_SLOT.minZ + DRAWER_SLOT.maxZ) / 2,
+      size: [0.06, 0.06, 0.06],
+      mass: 0.28,
+    },
+  ];
+
+  let challengeMode = false;
+  const blocks = practiceBlocks.map(cloneBlock);
   const spawn = {x: 0, z: -1.35, yaw: 0};
 
-  function reset() {
+  function reloadBlocks() {
+    const source = challengeMode ? challengeBlocks : practiceBlocks;
     blocks.length = 0;
-    for (const b of initialBlocks) blocks.push(cloneBlock(b));
+    for (const b of source) blocks.push(cloneBlock(b));
   }
 
-  return {walls, ramp, narrowDoor, blocks, spawn, reset};
+  function reset() {
+    reloadBlocks();
+  }
+
+  function setChallengeMode(on) {
+    challengeMode = !!on;
+    reloadBlocks();
+  }
+
+  function blockInReceive(block) {
+    if (!block) return false;
+    return pointInAabb(block.x ?? 0, block.y ?? 0.04, block.z ?? 0, RECEIVE_ZONE);
+  }
+
+  return {
+    walls,
+    ramp,
+    narrowDoor,
+    drawerSlot: {...DRAWER_SLOT},
+    receiveZone: {...RECEIVE_ZONE},
+    blocks,
+    spawn,
+    get challengeMode() {
+      return challengeMode;
+    },
+    setChallengeMode,
+    blockInReceive,
+    reset,
+  };
 }
