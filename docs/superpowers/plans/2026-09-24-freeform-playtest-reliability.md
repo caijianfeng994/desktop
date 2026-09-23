@@ -105,3 +105,9 @@
 ---
 
 按「按照优化方案执行」立即 Subagent-Driven 开工。
+
+## 实施记录（2026-09-24）
+
+- 已合入 `fix(game): 修复误导航覆盖草稿并保证模板可进试验场`（`ad0db05`）。
+- 自动化：`tests/test_game_build_reliability.mjs` + `test_enter_exit_yard` 断言含 `gripper-1` / 4 轮 / 9 连接。
+- 规格 §4–§5 验收勾选仍须人工试玩复测后再勾；本记录不替代回归确认。
