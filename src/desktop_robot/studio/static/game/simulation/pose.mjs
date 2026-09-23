@@ -1,6 +1,5 @@
 /**
- * 平移优先世界位姿（与 editorScene.worldPosesFromBlueprint / blueprints.world_poses 对齐）。
- * 旋转字段保留但不参与平移合成；完整旋转将在后续阶段接入。
+ * 蓝图世界位姿：平移连接合成；revolute 关节按 jointAngles 绕父连接点 Y 轴旋转。
  */
 
 function zeroPose() {
@@ -38,13 +37,22 @@ function pointPose(partId, pointId, defs) {
   return zeroPose();
 }
 
+/** 与 yardScene 工具位姿一致的 Y 偏航：x' = x c + z s，z' = -x s + z c */
+function rotateY(x, z, angle) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return {x: x * c + z * s, z: -x * s + z * c};
+}
+
 /**
  * @param {object} bp
  * @param {Map|Record<string, object>|object[]|null} partDefs
+ * @param {Record<string, number>} [jointAngles] 子实例 id → 转角（rad）
  * @returns {Record<string, {x:number,y:number,z:number,rx:number,ry:number,rz:number}>}
  */
-export function worldPosesFromBlueprint(bp, partDefs = null) {
+export function worldPosesWithJoints(bp, partDefs = null, jointAngles = {}) {
   const defs = indexPartDefs(partDefs);
+  const angles = jointAngles || {};
   const byId = Object.fromEntries((bp.instances || []).map((i) => [i.instance_id, i]));
   const children = new Map();
   for (const c of bp.connections || []) {
@@ -61,22 +69,48 @@ export function worldPosesFromBlueprint(bp, partDefs = null) {
     const parentId = stack.pop();
     const parentPose = poses[parentId];
     const parentInst = byId[parentId];
+    const parentRy = parentPose.ry || 0;
     for (const conn of children.get(parentId) || []) {
       const child = byId[conn.child_instance_id];
       if (!child) continue;
       const parentPt = pointPose(parentInst.part_id, conn.parent_point_id, defs);
       const childPt = pointPose(child.part_id, conn.child_point_id, defs);
       const local = {...zeroPose(), ...child.local_pose};
+
+      let jointAngle = 0;
+      if (conn.joint === 'revolute') {
+        jointAngle = Number(angles[child.instance_id]) || 0;
+      }
+
+      // 父连接点 + 绕该点 Y 轴的关节角，再叠父级 yaw
+      const cx = -childPt.x + local.x;
+      const cy = -childPt.y + local.y;
+      const cz = -childPt.z + local.z;
+      const swung = rotateY(cx, cz, jointAngle);
+      const lx = parentPt.x + swung.x;
+      const ly = parentPt.y + cy;
+      const lz = parentPt.z + swung.z;
+      const world = rotateY(lx, lz, parentRy);
+
       poses[child.instance_id] = {
-        x: parentPose.x + parentPt.x - childPt.x + local.x,
-        y: parentPose.y + parentPt.y - childPt.y + local.y,
-        z: parentPose.z + parentPt.z - childPt.z + local.z,
-        rx: local.rx,
-        ry: local.ry,
-        rz: local.rz,
+        x: parentPose.x + world.x,
+        y: parentPose.y + ly,
+        z: parentPose.z + world.z,
+        rx: (parentPose.rx || 0) + (local.rx || 0),
+        ry: parentRy + jointAngle + (local.ry || 0),
+        rz: (parentPose.rz || 0) + (local.rz || 0),
       };
       stack.push(child.instance_id);
     }
   }
   return poses;
+}
+
+/**
+ * @param {object} bp
+ * @param {Map|Record<string, object>|object[]|null} partDefs
+ * @returns {Record<string, {x:number,y:number,z:number,rx:number,ry:number,rz:number}>}
+ */
+export function worldPosesFromBlueprint(bp, partDefs = null) {
+  return worldPosesWithJoints(bp, partDefs, {});
 }

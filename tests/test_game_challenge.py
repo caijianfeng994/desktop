@@ -1,5 +1,7 @@
 """抽屉取物开放挑战：判定与幂等结算。"""
 
+import json
+
 from desktop_robot.game.engine import GameError, GameStore
 from desktop_robot.game.missions_open import CHALLENGE, DRAWER_BLOCK_ID, evaluate_drawer_result
 
@@ -125,3 +127,25 @@ def test_submit_rejects_mismatched_run_id(tmp_path):
         raise AssertionError("expected GameError")
     except GameError as exc:
         assert "过期" in str(exc) or "回合" in str(exc)
+
+
+def test_submit_rejects_mismatched_blueprint_id(tmp_path):
+    store = GameStore(tmp_path)
+    state, _ = action(store, "start_challenge", mission="drawer-block")
+    run_id = state["challenge"]["run_id"]
+    with store.connect() as db:
+        raw = json.loads(db.execute("SELECT state FROM game WHERE id=1").fetchone()[0])
+        raw["active_blueprint_id"] = "not-the-challenge-blueprint"
+        db.execute("UPDATE game SET state=? WHERE id=1", (json.dumps(raw, ensure_ascii=False),))
+    try:
+        action(
+            store,
+            "submit_challenge",
+            run_id=run_id,
+            block_id=DRAWER_BLOCK_ID,
+            region="receive",
+            speed=0.0,
+        )
+        raise AssertionError("expected GameError")
+    except GameError as exc:
+        assert "蓝图" in str(exc)

@@ -4,6 +4,8 @@ import {buildQuadChassisArmTemplate} from '../src/desktop_robot/studio/static/ga
 import {buildSimFromBlueprint} from '../src/desktop_robot/studio/static/game/simulation/body.mjs';
 import {checkTip} from '../src/desktop_robot/studio/static/game/simulation/tip.mjs';
 import {stepDrive} from '../src/desktop_robot/studio/static/game/simulation/drive.mjs';
+import {worldPosesWithJoints} from '../src/desktop_robot/studio/static/game/simulation/pose.mjs';
+import {tryGrasp} from '../src/desktop_robot/studio/static/game/simulation/grasp.mjs';
 
 /** 与 parts.py 对齐的最小 partDefs（对象 map） */
 const PART_DEFS = {
@@ -143,6 +145,31 @@ test('heavy held mass forward tips', () => {
   });
   assert.equal(tipped.tipped, true);
   assert.ok(tipped.reason.includes('倾覆') || tipped.reason.includes('重心'));
+});
+
+test('revolute joint angle swings gripper so side grasp succeeds', () => {
+  const bp = buildQuadChassisArmTemplate();
+  const root = 'core-1';
+  const zero = worldPosesWithJoints(bp, PART_DEFS, {});
+  const swung = worldPosesWithJoints(bp, PART_DEFS, {'joint-1': Math.PI / 2});
+  const g0 = zero['gripper-1'];
+  const g1 = swung['gripper-1'];
+  assert.ok(g0 && g1, 'gripper poses present');
+  // 绕 Y 摆臂：侧向偏移变化，或相对 core 的水平距离变化
+  const d0 = Math.hypot(g0.x - zero[root].x, g0.z - zero[root].z);
+  const d1 = Math.hypot(g1.x - swung[root].x, g1.z - swung[root].z);
+  assert.ok(
+    Math.abs(g1.x - g0.x) > 0.05 || Math.abs(d1 - d0) > 1e-3,
+    `expected swing: g0=(${g0.x},${g0.z}) g1=(${g1.x},${g1.z})`,
+  );
+
+  const sim = buildSimFromBlueprint(bp, PART_DEFS);
+  const robot = {x: 0, z: 0, yaw: 0};
+  const block = {x: g1.x, y: 0.04, z: g1.z, size: [0.08, 0.08, 0.08], mass: 0.3};
+  const failAtZero = tryGrasp(sim, robot, {x: g0.x, y: g0.y, z: g0.z, yaw: 0}, block);
+  const okSwung = tryGrasp(sim, robot, {x: g1.x, y: g1.y, z: g1.z, yaw: 0}, block);
+  assert.equal(failAtZero.success, false, failAtZero.reason);
+  assert.equal(okSwung.success, true, okSwung.reason);
 });
 
 test('stepDrive advances and clamps against walls', () => {

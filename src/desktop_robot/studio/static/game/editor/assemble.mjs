@@ -20,6 +20,30 @@ function occupiedKeys(connections) {
 }
 
 /**
+ * @param {{
+ *   partId: string,
+ *   joint?: string,
+ *   behaviors?: string[]|Set<string>,
+ *   kinds?: string[],
+ * }} opts
+ * @returns {string}
+ */
+function resolveJointType(opts) {
+  if (opts.joint) return opts.joint;
+  const partId = opts.partId || '';
+  if (/revolute/i.test(partId)) return 'revolute';
+  const behaviors = opts.behaviors instanceof Set
+    ? [...opts.behaviors]
+    : (opts.behaviors || []);
+  const kinds = opts.kinds || [];
+  const hints = [...behaviors, ...kinds].map((s) => String(s).toLowerCase());
+  if (hints.some((h) => h === 'pivot' || h === 'revolute' || h.includes('revolute'))) {
+    return 'revolute';
+  }
+  return 'fixed';
+}
+
+/**
  * @param {object} bp
  * @param {{
  *   partId: string,
@@ -27,6 +51,9 @@ function occupiedKeys(connections) {
  *   parentPointId: string,
  *   childPointId: string,
  *   instanceId?: string,
+ *   joint?: string,
+ *   behaviors?: string[]|Set<string>,
+ *   kinds?: string[],
  * }} opts
  * @returns {object}
  */
@@ -69,7 +96,7 @@ export function attachPart(bp, opts) {
     parent_point_id: parentPointId,
     child_instance_id: iid,
     child_point_id: childPointId,
-    joint: 'fixed',
+    joint: resolveJointType(opts),
   });
   return next;
 }

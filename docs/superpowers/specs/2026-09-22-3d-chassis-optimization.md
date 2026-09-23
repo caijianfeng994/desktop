@@ -126,7 +126,7 @@ GLB 可以包含倒角、螺丝、外壳和线缆细节。动态碰撞优先采�
 
 ## 7. 验收标准
 
-- [x] 加长机械臂能扩大实际可达范围；关节旋转正确围绕连接轴进行。（自动化：`buildSimFromBlueprint` reach 度量，见 `tests/test_game_phase2_acceptance.mjs` / `test_game_sim_body.mjs`）
+- [x] 加长机械臂能扩大实际可达范围；关节旋转正确围绕连接轴进行。（自动化：`buildSimFromBlueprint` reach 度量 + `worldPosesWithJoints` 关节摆动改变工具位姿，见 `tests/test_game_phase2_acceptance.mjs` / `test_game_sim_body.mjs`）
 - [x] 搬起重物会影响稳定性，且原因能被玩家观察理解。（自动化：`checkTip` 倾覆与 reason，见 `tests/test_game_sim_body.mjs`）
 - [x] 加宽底盘改善抗翻，同时可能无法通过窄门。（自动化：宽底盘 `width > door.width`、窄底盘 `<`，见 `tests/test_game_phase2_acceptance.mjs`）
 - [ ] 机器人、工具、物体与环境不会在正常操作下明显穿透。

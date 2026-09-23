@@ -58,6 +58,28 @@ test('undo/redo restores instances after attach and detach', () => {
   assert.equal(back.connections.length, 1);
 });
 
+test('attachPart sets revolute for revolute_joint partId', () => {
+  let bp = bareCore();
+  bp = attachPart(bp, {
+    partId: 'revolute_joint',
+    parentInstanceId: 'core-1',
+    parentPointId: 'mount_front',
+    childPointId: 'in',
+    instanceId: 'joint-1',
+  });
+  assert.equal(bp.connections[0].joint, 'revolute');
+
+  bp = attachPart(bp, {
+    partId: 'beam',
+    parentInstanceId: 'joint-1',
+    parentPointId: 'out',
+    childPointId: 'end_b',
+    instanceId: 'beam-1',
+    joint: 'fixed',
+  });
+  assert.equal(bp.connections.find((c) => c.child_instance_id === 'beam-1').joint, 'fixed');
+});
+
 test('rotateInstance updates local_pose.ry', () => {
   let bp = buildQuadChassisArmTemplate();
   const before = bp.instances.find((i) => i.instance_id === 'beam-1').local_pose.ry;

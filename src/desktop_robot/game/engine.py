@@ -318,6 +318,8 @@ def apply_action(state: dict, payload: dict) -> str:
             raise GameError("请先开始抽屉挑战。")
         if payload.get("run_id") != challenge["run_id"]:
             raise GameError("挑战回合已过期，请重新开始。")
+        if challenge.get("blueprint_id") != state.get("active_blueprint_id"):
+            raise GameError("挑战蓝图与当前蓝图不一致，请重新开始挑战。")
         result = evaluate_drawer_result(
             {
                 "block_id": payload.get("block_id"),

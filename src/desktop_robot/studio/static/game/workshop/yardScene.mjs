@@ -8,7 +8,8 @@ import {stepDrive} from '../simulation/drive.mjs';
 import {checkTip} from '../simulation/tip.mjs';
 import {DRAWER_BLOCK_ID, createYardWorld} from '../simulation/world.mjs';
 import {tryDrag, tryGrasp, tryPush} from '../simulation/grasp.mjs';
-import {PART_SIZES, worldPosesFromBlueprint} from './editorScene.mjs';
+import {worldPosesWithJoints} from '../simulation/pose.mjs';
+import {PART_SIZES} from './editorScene.mjs';
 
 const SCALE = 12;
 const ARENA_M = 2.4;
@@ -278,17 +279,18 @@ export class YardScene {
   setJointDelta(delta) {
     const links = (this.sim?.links || []).filter((l) => l.joint?.type === 'revolute');
     if (!links.length) return;
-    const id = links[0].id;
-    const lim = links[0].joint.limits || {min: -Math.PI / 2, max: Math.PI / 2};
-    const cur = this.jointAngles[id] || 0;
-    this.jointAngles[id] = Math.min(lim.max, Math.max(lim.min, cur + delta));
+    for (const link of links) {
+      const lim = link.joint?.limits || {min: -Math.PI / 2, max: Math.PI / 2};
+      const cur = this.jointAngles[link.id] || 0;
+      this.jointAngles[link.id] = Math.min(lim.max, Math.max(lim.min, cur + delta));
+    }
     this._rebuildRobot();
   }
 
   _toolWorld() {
     if (!this.sim || !this.blueprint) return null;
     const defs = indexPartDefs(this.partDefs);
-    const poses = worldPosesFromBlueprint(this.blueprint, defs);
+    const poses = worldPosesWithJoints(this.blueprint, defs, this.jointAngles);
     const tool = toolLink(this.sim);
     if (!tool) return null;
     const local = poses[tool.id] || {x: 0, y: 0, z: 0};
@@ -414,14 +416,10 @@ export class YardScene {
     this._clearRobot();
     if (!this.blueprint) return;
     const defs = indexPartDefs(this.partDefs);
-    const poses = worldPosesFromBlueprint(this.blueprint, defs);
+    const poses = worldPosesWithJoints(this.blueprint, defs, this.jointAngles);
     for (const inst of this.blueprint.instances || []) {
       const size = sizeFor(inst.part_id, defs);
       const pose = poses[inst.instance_id] || {x: 0, y: 0, z: 0};
-      let ry = pose.ry || 0;
-      if (this.jointAngles[inst.instance_id] != null) {
-        ry += this.jointAngles[inst.instance_id];
-      }
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(size[0] * SCALE, size[1] * SCALE, size[2] * SCALE),
         new THREE.MeshStandardMaterial({
@@ -430,7 +428,7 @@ export class YardScene {
         }),
       );
       mesh.position.set(pose.x * SCALE, pose.y * SCALE + (size[1] * SCALE) / 2, pose.z * SCALE);
-      mesh.rotation.y = ry;
+      mesh.rotation.y = pose.ry || 0;
       this.robotRoot.add(mesh);
       this.partMeshes.set(inst.instance_id, mesh);
     }
@@ -480,12 +478,24 @@ export class YardScene {
     const held = this.heldBlockId
       ? this.world.blocks.find((b) => b.id === this.heldBlockId)
       : null;
+    let heldOffset = {x: 0, z: 0};
+    if (held) {
+      const dx = held.x - this.drive.x;
+      const dz = held.z - this.drive.z;
+      const cos = Math.cos(this.drive.yaw);
+      const sin = Math.sin(this.drive.yaw);
+      // 世界偏移 → 机器人局部（与 _toolWorld 的 R_yaw 互逆）
+      heldOffset = {
+        x: dx * cos - dz * sin,
+        z: dx * sin + dz * cos,
+      };
+    }
     const tip = checkTip({
       com: this.sim.com,
       mass: this.sim.mass,
       width: this.sim.width,
       heldMass: held?.mass || 0,
-      heldOffset: held ? {x: held.x - this.drive.x, z: held.z - this.drive.z} : {x: 0, z: 0},
+      heldOffset,
     });
     if (tip.tipped) {
       this.tipped = true;
