@@ -479,6 +479,10 @@ def test_enter_exit_yard_preserves_blueprint_id_and_instances(tmp_path):
     assert entered['yard_snapshot']['id'] == active_id
     assert entered['yard_snapshot']['name'] == '试验前机架'
     assert len(entered['yard_snapshot']['instances']) == instance_count
+    snap_ids = {i['instance_id'] for i in entered['yard_snapshot']['instances']}
+    assert 'gripper-1' in snap_ids
+    assert sum(1 for i in entered['yard_snapshot']['instances'] if i['part_id'] == 'wheel') == 4
+    assert len(entered['yard_snapshot']['connections']) == 9
 
     # 模拟试验场期间误改蓝图元数据；exit 应从快照恢复，且不写入运行姿态
     with store.connect() as db:

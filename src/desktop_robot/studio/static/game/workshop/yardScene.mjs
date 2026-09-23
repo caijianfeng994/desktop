@@ -269,6 +269,7 @@ export class YardScene {
     this.jointAngles = {};
     this.heldBlockId = null;
     this._rebuildRobot();
+    this.frameCameraToBounds();
   }
 
   setInput(forward, turn) {
@@ -388,6 +389,34 @@ export class YardScene {
     this._challengeReadySent = false;
     this._syncBlocks();
     this._rebuildRobot();
+    this.frameCameraToBounds();
+  }
+
+  /** 按机器人包围盒自动取景，避免试验场里机器过小。 */
+  frameCameraToBounds() {
+    const links = this.sim?.links || [];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const link of links) {
+      const a = link.aabb;
+      if (!a) continue;
+      minX = Math.min(minX, a.min.x);
+      maxX = Math.max(maxX, a.max.x);
+      minY = Math.min(minY, a.min.y);
+      maxY = Math.max(maxY, a.max.y);
+      minZ = Math.min(minZ, a.min.z);
+      maxZ = Math.max(maxZ, a.max.z);
+    }
+    if (!Number.isFinite(minX)) {
+      this.orbitRadius = 3.2;
+      return;
+    }
+    const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 0.2);
+    this.orbitRadius = Math.min(6.5, Math.max(2.4, span * 3.2 + 1.2));
   }
 
   upright() {

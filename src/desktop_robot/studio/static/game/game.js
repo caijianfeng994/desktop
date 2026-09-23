@@ -3,6 +3,8 @@ import {planStarterLoadout} from './loadout.mjs';
 import {createHistory} from './editor/commandHistory.mjs';
 import {attachPart} from './editor/assemble.mjs';
 import {buildQuadChassisArmTemplate} from './editor/templates.mjs';
+import {findNavControl} from './nav.mjs';
+import {blueprintHasTool, formatBuildStatus, shouldSyncFromServer} from './buildDraft.mjs';
 
 const CHILD_POINT = {
   wheel: 'hub',
@@ -27,17 +29,19 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];co
 let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navigating=false;
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
 let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
+let buildDirty=false,buildSaving=false,buildSaveFailed=false;
 let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0},yardChallengeSubmitting=false;
 function toast(text){if(!text)return;$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4200)}
 function showModal(content){$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();icons(modal)}
 $('.modal-close').onclick=()=>modal.close();modal.addEventListener('click',e=>{if(e.target===modal){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close()}});
-async function navigate(next,replace=false){
+async function navigate(next,replace=false,{force=false}={}){
  if(!state)return;
  if(!VIEWS.includes(next))next='home';
  const request=++navigationVersion;navigating=true;routeVersion++;scene?.setRoute([]);
  await actionSettled;
  if(request!==navigationVersion)return;
  if(next==='play'&&!state.active)next='missions';
+ const sameView=next===view&&!force;
  const transition=state.active?(next==='play'?(state.active.paused?'resume':null):(!state.active.paused?'pause':null)):null;
  if(transition&&!await act(transition,{},true)){
   if(request===navigationVersion){navigating=false;history.replaceState({},'',`#${view}`)}
@@ -49,8 +53,11 @@ async function navigate(next,replace=false){
  $$('.screen').forEach(s=>s.hidden=s.id!==next);
  $$('.bottom-nav button').forEach(b=>{const selected=b.dataset.view===(next==='play'?'missions':next);b.classList.toggle('active',selected);b.setAttribute('aria-current',selected?'page':'false')});
  const hash=`#${next}`;if(location.hash!==hash)history[replace?'replaceState':'pushState']({},'',hash);
- scene?.update(state,view);window.scrollTo(0,0);render();
- if(next==='build')await ensureBuildEditor();
+ scene?.update(state,view);if(!sameView)window.scrollTo(0,0);render();
+ if(next==='build'){
+  if(sameView&&editorScene){editorScene.resize();updateBuildChrome()}
+  else await ensureBuildEditor({resync:!sameView&&!buildDirty});
+ }
  else editorScene?.resize();
  if(next==='yard')await ensureYardScene();
  else if(leavingYard){
@@ -59,7 +66,7 @@ async function navigate(next,replace=false){
  }
 }
 window.addEventListener('popstate',()=>navigate(location.hash.slice(1)||'home',true));
-document.addEventListener('click',e=>{const nav=e.target.closest('[data-view]');if(nav)navigate(nav.dataset.view)});
+document.addEventListener('click',e=>{const nav=findNavControl(e.target);if(nav)navigate(nav.dataset.view)});
 async function act(action,extra={},quiet=false){if(busy||!state)return false;busy=true;actionSettled=new Promise(resolve=>{finishAction=resolve});document.body.classList.add('busy');$('#save-status').innerHTML=`${icon('rotate')} 正在保存…`;try{const response=await fetch('/api/game/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,revision:state.revision,...extra})});const data=await response.json();if(data.state)state=data.state;render();scene?.update(state,view);if(!data.ok){toast(data.reason||'操作未完成');return false}if(action==='move')await scene?.armMotion();if(!quiet)toast(data.message);return data}catch(error){toast('暂时无法连接工坊，未确认保存。请重试。');return false}finally{busy=false;finishAction();document.body.classList.remove('busy');$('#save-status').innerHTML='<span class="live-dot"></span> 本地工坊 · 自动保存'}}
 function hasPart(id){return id==='arm'?state.equipped.some(p=>p==='arm'||p==='arm_left'):state.equipped.includes(id)}
 function requirementName(id){return id==='arm'?'机械臂（左 / 右任选）':state.parts.find(p=>p.id===id).name}
@@ -124,10 +131,13 @@ function activeBlueprint(){
  const id=state.active_blueprint_id;
  return (state.blueprints||[]).find(b=>b.id===id)||(state.blueprints||[])[0]||null;
 }
-function syncBuildFromState(resetHistory=false){
+function syncBuildFromState(resetHistory=false,{force=false}={}){
+ if(!shouldSyncFromServer({dirty:buildDirty,force}))return;
  const bp=activeBlueprint();
  if(!bp)return;
  buildBp=structuredClone(bp);
+ buildDirty=false;
+ buildSaveFailed=false;
  if(resetHistory){buildHistory=createHistory();buildHistory.push(buildBp)}
  else if(!buildHistory.canUndo&&!buildHistory.canRedo)buildHistory.push(buildBp);
  buildSelected=buildBp.root_instance_id;
@@ -140,9 +150,20 @@ function updateBuildChrome(){
  const undo=$('#build-undo'),redo=$('#build-redo');
  if(undo)undo.disabled=!buildHistory.canUndo;
  if(redo)redo.disabled=!buildHistory.canRedo;
+ const status=$('#build-status');
+ if(status){
+  status.textContent=formatBuildStatus({
+   saving:buildSaving,
+   dirty:buildDirty,
+   failed:buildSaveFailed,
+   name:buildBp?.name||activeBlueprint()?.name||'未命名作品',
+   instanceCount:(buildBp?.instances||[]).length,
+  });
+ }
 }
-function applyBuildBlueprint(next,{push=true}={}){
+function applyBuildBlueprint(next,{push=true,dirty=true}={}){
  buildBp=next;
+ if(dirty){buildDirty=true;buildSaveFailed=false}
  if(push)buildHistory.push(buildBp);
  editorScene?.setBlueprint(buildBp);
  if(buildSelected&&!(buildBp.instances||[]).some(i=>i.instance_id===buildSelected)){
@@ -151,8 +172,14 @@ function applyBuildBlueprint(next,{push=true}={}){
  editorScene?.setSelected(buildSelected);
  updateBuildChrome();
 }
-async function ensureBuildEditor(){
- if(editorScene){editorScene.resize();syncBuildFromState(false);return editorScene}
+async function ensureBuildEditor({resync=false}={}){
+ if(editorScene){
+  editorScene.resize();
+  if(!buildBp)syncBuildFromState(false,{force:true});
+  else if(resync&&!buildDirty)syncBuildFromState(false);
+  else updateBuildChrome();
+  return editorScene;
+ }
  if(editorReady)return editorReady;
  editorReady=(async()=>{
   try{
@@ -179,7 +206,7 @@ async function ensureBuildEditor(){
      }catch(err){toast(err.message||'无法连接')}
     },
    });
-   syncBuildFromState(true);
+   syncBuildFromState(true,{force:true});
   }catch(error){
    console.error(error);
    toast('建造场景未能启动');
@@ -188,6 +215,18 @@ async function ensureBuildEditor(){
   return editorScene;
  })();
  return editorReady;
+}
+async function saveBuildBlueprint({quiet=false}={}){
+ if(!buildBp){toast('没有可保存的蓝图');return false}
+ buildSaving=true;buildSaveFailed=false;updateBuildChrome();
+ const data=await act('blueprint_replace',{blueprint:buildBp},quiet);
+ buildSaving=false;
+ if(!data){buildSaveFailed=true;updateBuildChrome();return false}
+ buildDirty=false;
+ window.__gamePartDefs=state.part_defs||[];
+ syncBuildFromState(false,{force:true});
+ updateBuildChrome();
+ return true;
 }
 $('#build-part-palette')?.addEventListener('click',e=>{
  const btn=e.target.closest('[data-build-part]');
@@ -220,15 +259,28 @@ $('#build-apply-quad')?.addEventListener('click',()=>{
  toast('已应用四轮+臂模板（记得保存）');
 });
 $('#build-save')?.addEventListener('click',async()=>{
- if(!buildBp){toast('没有可保存的蓝图');return}
- const data=await act('blueprint_replace',{blueprint:buildBp});
- if(data){window.__gamePartDefs=state.part_defs||[];syncBuildFromState(true)}
+ await saveBuildBlueprint();
 });
 $('#build-enter-yard')?.addEventListener('click',async()=>{
  if(!state)return;
- if(buildBp&&!await act('blueprint_replace',{blueprint:buildBp},true))return;
+ if(buildDirty){
+  if(!await saveBuildBlueprint({quiet:true}))return;
+ }
+ const bp=buildBp||activeBlueprint();
+ if(!blueprintHasTool(bp,state.part_defs||[])){
+  toast('蓝图上还没有夹爪/推板/钩子，先装上再进试验场');
+  return;
+ }
  if(!await act('enter_yard'))return;
  await navigate('yard');
+});
+$('#build-toggle-parts')?.addEventListener('click',()=>{
+ const panel=$('.build-parts');
+ if(!panel)return;
+ const collapsed=panel.classList.toggle('is-collapsed');
+ const btn=$('#build-toggle-parts');
+ if(btn)btn.setAttribute('aria-expanded',collapsed?'false':'true');
+ if(btn)btn.textContent=collapsed?'展开零件库':'收起零件库';
 });
 
 function offerUpright(reason){
@@ -317,11 +369,18 @@ $('#yard-reset')?.addEventListener('click',async()=>{
 });
 $('#yard-exit')?.addEventListener('click',async()=>{
  if(!await act('exit_yard'))return;
- syncBuildFromState(true);
+ buildDirty=false;
+ syncBuildFromState(true,{force:true});
  await navigate('build');
 });
 $('#yard-challenge')?.addEventListener('click',async()=>{
  if(!state)return;
+ const bp=activeBlueprint();
+ if(!blueprintHasTool(bp,state.part_defs||[])){
+  toast('当前蓝图缺少操作工具，已返回编辑');
+  await navigate('build');
+  return;
+ }
  const data=await act('start_challenge',{mission:'drawer-block'});
  if(!data)return;
  yardScene?.setChallengeMode(true);
