@@ -79,6 +79,12 @@ export function buildQuadChassisArmTemplate({
       conn('beam-1', 'end_a', 'joint-2', 'in', 'revolute'),
       conn('joint-2', 'out', 'gripper-1', 'mount', 'fixed'),
     ],
-    bindings: {},
+    bindings: {
+      drive: [],
+      turn: [],
+      lift: ['joint-1', 'joint-2'],
+      extend: [],
+      grasp: ['gripper-1'],
+    },
   };
 }

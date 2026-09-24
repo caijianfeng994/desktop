@@ -8,7 +8,13 @@ test('buildQuadChassisArmTemplate has core, 4 wheels, 2 joints, gripper', () => 
   assert.equal(typeof bp.id, 'string');
   assert.ok(Array.isArray(bp.instances));
   assert.ok(Array.isArray(bp.connections));
-  assert.deepEqual(bp.bindings, {});
+  assert.deepEqual(bp.bindings, {
+    drive: [],
+    turn: [],
+    lift: ['joint-1', 'joint-2'],
+    extend: [],
+    grasp: ['gripper-1'],
+  });
 
   const count = (partId) => bp.instances.filter((i) => i.part_id === partId).length;
   assert.equal(count('core'), 1);

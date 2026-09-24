@@ -33,6 +33,7 @@ function resolveJointType(opts) {
   if (opts.joint) return opts.joint;
   const partId = opts.partId || '';
   if (/revolute/i.test(partId)) return 'revolute';
+  if (/prism/i.test(partId)) return 'prismatic';
   const behaviors = opts.behaviors instanceof Set
     ? [...opts.behaviors]
     : (opts.behaviors || []);
@@ -40,6 +41,9 @@ function resolveJointType(opts) {
   const hints = [...behaviors, ...kinds].map((s) => String(s).toLowerCase());
   if (hints.some((h) => h === 'pivot' || h === 'revolute' || h.includes('revolute'))) {
     return 'revolute';
+  }
+  if (hints.some((h) => h === 'extend' || h === 'prismatic' || h.includes('prism'))) {
+    return 'prismatic';
   }
   return 'fixed';
 }

@@ -2,7 +2,7 @@
  * 由蓝图构建简化刚体度量：质心、轮距、宽度、可达距离。
  */
 import {sizeFromParams} from '../editor/params.mjs';
-import {indexPartDefs, worldPosesFromBlueprint} from './pose.mjs';
+import {indexPartDefs, worldPosesFromBlueprint, worldPosesWithJoints} from './pose.mjs';
 
 const ROLL_TRACK = new Set(['roll', 'track']);
 const TOOL = new Set(['grasp', 'drag', 'push']);
@@ -29,23 +29,33 @@ function aabbFromPose(pose, size) {
   };
 }
 
+function limitsFor(inst, joint) {
+  const p = inst?.params || {};
+  if (joint === 'revolute') {
+    return {
+      min: Number.isFinite(Number(p.limit_min)) ? Number(p.limit_min) : -Math.PI / 2,
+      max: Number.isFinite(Number(p.limit_max)) ? Number(p.limit_max) : Math.PI / 2,
+    };
+  }
+  if (joint === 'prismatic') {
+    return {
+      min: Number.isFinite(Number(p.limit_min)) ? Number(p.limit_min) : 0,
+      max: Number.isFinite(Number(p.limit_max)) ? Number(p.limit_max) : 0.12,
+    };
+  }
+  return null;
+}
+
 /**
  * @param {object} bp
  * @param {Map|Record<string, object>|object[]|null} partDefs
- * @returns {{
- *   links: object[],
- *   rootId: string,
- *   wheelbase: number,
- *   width: number,
- *   reach: number,
- *   com: {x:number,y:number,z:number},
- *   mass: number,
- * }}
+ * @param {{jointAngles?: Record<string, number>, jointSlides?: Record<string, number>}|null} [poseState]
  */
-export function buildSimFromBlueprint(bp, partDefs) {
+export function buildSimFromBlueprint(bp, partDefs, poseState = null) {
   const defs = indexPartDefs(partDefs);
-  const poses = worldPosesFromBlueprint(bp, defs);
-  const byId = Object.fromEntries((bp.instances || []).map((i) => [i.instance_id, i]));
+  const poses = poseState
+    ? worldPosesWithJoints(bp, defs, poseState.jointAngles || {}, poseState.jointSlides || {})
+    : worldPosesFromBlueprint(bp, defs);
   const parentConn = new Map();
   for (const c of bp.connections || []) {
     parentConn.set(c.child_instance_id, c);
@@ -54,6 +64,7 @@ export function buildSimFromBlueprint(bp, partDefs) {
   const links = [];
   const rollX = [];
   const rollXZ = [];
+  const supportPoints = [];
   let mass = 0;
   let mx = 0;
   let my = 0;
@@ -84,11 +95,7 @@ export function buildSimFromBlueprint(bp, partDefs) {
         type: joint,
         parentId: conn?.parent_instance_id || null,
         axis: joint === 'revolute' ? 'y' : joint === 'prismatic' ? 'z' : null,
-        limits: joint === 'revolute'
-          ? {min: -Math.PI / 2, max: Math.PI / 2}
-          : joint === 'prismatic'
-            ? {min: 0, max: 0.08}
-            : null,
+        limits: limitsFor(inst, joint),
       },
     });
 
@@ -100,6 +107,7 @@ export function buildSimFromBlueprint(bp, partDefs) {
     if (hasBehavior(behaviors, ROLL_TRACK)) {
       rollX.push(pose.x);
       rollXZ.push([pose.x, pose.z]);
+      supportPoints.push({x: pose.x, z: pose.z});
     }
     if (hasBehavior(behaviors, TOOL)) {
       const r = Math.hypot(pose.x - rootPose.x, pose.z - rootPose.z);
@@ -110,7 +118,6 @@ export function buildSimFromBlueprint(bp, partDefs) {
   let width = 0;
   if (rollX.length) {
     width = Math.max(...rollX.map(Math.abs)) * 2;
-    // Prefer full span when wheels sit asymmetrically.
     const span = Math.max(...rollX) - Math.min(...rollX);
     if (span > width) width = span;
   }
@@ -133,5 +140,15 @@ export function buildSimFromBlueprint(bp, partDefs) {
     reach,
     com: {x: mx * inv, y: my * inv, z: mz * inv},
     mass,
+    supportPolygon: supportPoints,
   };
+}
+
+export function toolLink(sim) {
+  const TOOL_SET = new Set(['grasp', 'drag', 'push']);
+  for (const link of sim?.links || []) {
+    const behaviors = link.behaviors || [];
+    if (behaviors.some((b) => TOOL_SET.has(b))) return link;
+  }
+  return null;
 }

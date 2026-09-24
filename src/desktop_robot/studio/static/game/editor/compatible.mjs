@@ -33,6 +33,7 @@ export const DEFAULT_CHILD_POINT = Object.freeze({
   beam: 'end_b',
   post: 'end_b',
   revolute_joint: 'in',
+  prism_joint: 'in',
   gripper: 'mount',
   pusher: 'mount',
   hook: 'mount',

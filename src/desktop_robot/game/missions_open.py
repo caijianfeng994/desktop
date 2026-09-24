@@ -1,8 +1,9 @@
-"""开放挑战定义与结果判定（抽屉取物）。"""
+"""开放挑战定义与结果判定（抽屉取物、跨桌缝救援）。"""
 
 from __future__ import annotations
 
 DRAWER_BLOCK_ID = "drawer-cube"
+DESK_GAP_BLOCK_ID = "rescue-cube"
 
 CHALLENGE = dict(
     id="drawer-block",
@@ -14,24 +15,41 @@ CHALLENGE = dict(
     block_id=DRAWER_BLOCK_ID,
 )
 
-OPEN_CHALLENGES = [CHALLENGE]
+DESK_GAP_CHALLENGE = dict(
+    id="desk-gap-rescue",
+    title="跨桌缝救援",
+    subtitle="抬高、够远或绕行",
+    description="对岸桌面上的伙伴方块需要被救回近侧接收区。桌缝会掉落复位；可用长臂够取、推送或加宽底盘绕行。",
+    reward=220,
+    xp=90,
+    block_id=DESK_GAP_BLOCK_ID,
+)
+
+OPEN_CHALLENGES = [CHALLENGE, DESK_GAP_CHALLENGE]
+CHALLENGES_BY_ID = {c["id"]: c for c in OPEN_CHALLENGES}
 
 # 方块速度阈值（m/s）：≈静止
 _SPEED_EPS = 0.05
 
 
 def evaluate_drawer_result(payload: dict | None) -> dict:
-    """判定抽屉挑战结果。不检查 equipped / 零件清单。
+    """判定开放挑战结果。不检查 equipped / 零件清单。
 
-    payload 需含 ``block_id``、``region``、``speed``。
-    成功条件：block_id 匹配、region==receive、speed<=0.05。
+    payload 需含 ``block_id``、``region``、``speed``；可选 ``challenge_id``。
+    成功条件：block_id 匹配挑战目标、region==receive、speed<=0.05。
     """
     data = payload if isinstance(payload, dict) else {}
+    challenge_id = data.get("challenge_id") or data.get("mission")
+    challenge = CHALLENGES_BY_ID.get(challenge_id) if challenge_id else None
+    expected_ids = {CHALLENGE["block_id"], DESK_GAP_CHALLENGE["block_id"]}
+    if challenge:
+        expected_ids = {challenge["block_id"]}
+
     block_id = data.get("block_id")
     region = data.get("region")
     speed_raw = data.get("speed")
 
-    if block_id != DRAWER_BLOCK_ID and block_id != CHALLENGE.get("block_id"):
+    if block_id not in expected_ids:
         return {"ok": False, "reason": "不是挑战目标方块。"}
     if region != "receive":
         return {"ok": False, "reason": "方块还没有进入接收区。"}

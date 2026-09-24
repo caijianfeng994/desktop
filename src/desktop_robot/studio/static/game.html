@@ -34,15 +34,21 @@
   <button type="button" class="build-part-btn" data-build-part="beam">连接杆</button>
   <button type="button" class="build-part-btn" data-build-part="post">立柱</button>
   <button type="button" class="build-part-btn" data-build-part="revolute_joint">转动关节</button>
+  <button type="button" class="build-part-btn" data-build-part="prism_joint">伸缩模块</button>
   <button type="button" class="build-part-btn" data-build-part="gripper">夹爪</button>
   <button type="button" class="build-part-btn" data-build-part="pusher">推板</button>
   <button type="button" class="build-part-btn" data-build-part="hook">钩子</button>
- </div><div id="build-params" class="build-params"><p class="tip">选中零件后可调尺寸参数</p></div><p class="panel-foot">从空机架开始 · 绿色连接点可装</p></aside>
+  <button type="button" class="build-part-btn" data-build-part="battery">电池配重</button>
+ </div><div id="build-params" class="build-params"><p class="tip">选中零件后可调尺寸参数</p></div>
+ <div id="build-bindings" class="build-bindings"><p class="tip">控制绑定：选中零件后点动作按钮</p></div>
+ <div id="build-components" class="build-components"><p class="tip">自制组件库</p></div>
+ <p class="panel-foot">从空机架开始 · 绿色连接点可装</p></aside>
  <div class="build-toolbar paper">
   <button type="button" class="dark" id="build-new-empty">新建空机架</button>
   <button type="button" class="dark" id="build-undo">撤销</button>
   <button type="button" class="dark" id="build-redo">重做</button>
   <button type="button" class="dark" id="build-detach">拆卸选中</button>
+  <button type="button" class="dark" id="build-save-component">存为组件</button>
   <button type="button" class="dark" id="build-apply-quad">教学模板（可拆改）</button>
   <button type="button" class="primary" id="build-save">保存蓝图</button>
   <button type="button" class="dark" id="build-enter-yard">进入试验场</button>
@@ -55,17 +61,21 @@
   <span class="eyebrow">CONTROLS</span>
   <ul class="yard-keys">
    <li><kbd>W/A/S/D</kbd> 或方向键 · 驾驶</li>
-   <li><kbd>Q</kbd> / <kbd>E</kbd> · 关节</li>
+   <li><kbd>Q</kbd> / <kbd>E</kbd> · 抬臂</li>
+   <li><kbd>Z</kbd> / <kbd>C</kbd> · 伸缩</li>
+   <li><kbd>F</kbd> · 夹爪开合</li>
    <li><kbd>Space</kbd> · 抓取 / 放下</li>
    <li><kbd>R</kbd> · 回起点</li>
   </ul>
-  <p class="tip">窄门约 0.25m：底盘过宽会被挡住。坡道为本轮视觉占位，暂不参与倾覆。倾覆后点「扶正」。</p>
+  <p class="tip">窄门约 0.25m。坡道为视觉占位。桌缝挑战掉落会复位。倾覆后点「扶正」。</p>
+  <div id="yard-diagnostics" class="yard-diagnostics tip">诊断加载中…</div>
  </aside>
  <div class="yard-toolbar paper">
   <button type="button" class="dark" id="yard-upright">扶正</button>
   <button type="button" class="dark" id="yard-reset">回起点</button>
   <button type="button" class="dark" id="yard-exit">回编辑</button>
-  <button type="button" class="primary" id="yard-challenge">开始抽屉挑战</button>
+  <button type="button" class="primary" id="yard-challenge">抽屉挑战</button>
+  <button type="button" class="primary" id="yard-challenge-gap">跨桌缝救援</button>
   <button type="button" class="primary" id="yard-submit-challenge" hidden>提交挑战</button>
  </div>
 </section>

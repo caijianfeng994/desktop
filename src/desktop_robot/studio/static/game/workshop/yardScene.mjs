@@ -3,12 +3,13 @@
  * requestAnimationFrame → stepDrive；暴露 reset / upright。
  */
 import * as THREE from 'three';
-import {buildSimFromBlueprint} from '../simulation/body.mjs';
+import {buildSimFromBlueprint, toolLink} from '../simulation/body.mjs';
 import {stepDrive} from '../simulation/drive.mjs';
 import {checkTip} from '../simulation/tip.mjs';
-import {DRAWER_BLOCK_ID, createYardWorld} from '../simulation/world.mjs';
+import {DESK_GAP_BLOCK_ID, DRAWER_BLOCK_ID, createYardWorld} from '../simulation/world.mjs';
 import {tryDrag, tryGrasp, tryPush} from '../simulation/grasp.mjs';
 import {worldPosesWithJoints} from '../simulation/pose.mjs';
+import {applyBoundAxis, diagnoseControls} from '../editor/bindings.mjs';
 import {PART_SIZES} from './editorScene.mjs';
 
 const SCALE = 12;
@@ -40,15 +41,6 @@ function sizeFor(partId, defs) {
   return PART_SIZES[partId] || [0.05, 0.05, 0.05];
 }
 
-function toolLink(sim) {
-  const TOOL = new Set(['grasp', 'drag', 'push']);
-  for (const link of sim?.links || []) {
-    const behaviors = link.behaviors || [];
-    if (behaviors.some((b) => TOOL.has(b))) return link;
-  }
-  return null;
-}
-
 /**
  * @param {HTMLElement} container
  * @param {{
@@ -68,12 +60,15 @@ export class YardScene {
     this.sim = null;
     this.partDefs = [];
     this.jointAngles = {};
+    this.jointSlides = {};
+    this.gripperOpen = 1;
     this.heldBlockId = null;
     this.input = {forward: 0, turn: 0};
     this.tipped = false;
     this._prevBlockPos = null;
     this._blockSpeed = 0;
     this._challengeReadySent = false;
+    this._fallCooldown = 0;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xe8dac4);
@@ -267,6 +262,8 @@ export class YardScene {
     this.sim = this.blueprint ? buildSimFromBlueprint(this.blueprint, defs) : null;
     this.drive.width = Math.max(0.08, this.sim?.width || 0.2);
     this.jointAngles = {};
+    this.jointSlides = {};
+    this.gripperOpen = 1;
     this.heldBlockId = null;
     this._rebuildRobot();
     this.frameCameraToBounds();
@@ -278,20 +275,71 @@ export class YardScene {
   }
 
   setJointDelta(delta) {
-    const links = (this.sim?.links || []).filter((l) => l.joint?.type === 'revolute');
-    if (!links.length) return;
-    for (const link of links) {
-      const lim = link.joint?.limits || {min: -Math.PI / 2, max: Math.PI / 2};
-      const cur = this.jointAngles[link.id] || 0;
-      this.jointAngles[link.id] = Math.min(lim.max, Math.max(lim.min, cur + delta));
-    }
+    this._applyAction('lift', delta);
+  }
+
+  setExtendDelta(delta) {
+    this._applyAction('extend', delta);
+  }
+
+  setGraspDelta(delta) {
+    this._applyAction('grasp', delta);
+  }
+
+  _applyAction(action, delta) {
+    if (!this.blueprint) return;
+    const result = applyBoundAxis(this.blueprint, action, delta, {
+      jointAngles: this.jointAngles,
+      jointSlides: this.jointSlides,
+      gripperOpen: this.gripperOpen,
+      sim: this.sim,
+    });
+    this.jointAngles = result.jointAngles;
+    this.jointSlides = result.jointSlides;
+    this.gripperOpen = result.gripperOpen;
+    if (result.messages?.length) this.callbacks.onGrasp?.({success: false, reason: result.messages[0]});
+    this._refreshPoseSim();
     this._rebuildRobot();
+  }
+
+  _refreshPoseSim() {
+    if (!this.blueprint) return;
+    const defs = indexPartDefs(this.partDefs);
+    this.sim = buildSimFromBlueprint(this.blueprint, defs, {
+      jointAngles: this.jointAngles,
+      jointSlides: this.jointSlides,
+    });
+    if (this.sim) this.sim.gripperOpen = this.gripperOpen;
+    this.drive.width = Math.max(0.08, this.sim?.width || 0.2);
+  }
+
+  diagnostics() {
+    this._refreshPoseSim();
+    const ctrl = diagnoseControls(this.blueprint, this.sim);
+    const tip = checkTip({
+      com: this.sim?.com,
+      mass: this.sim?.mass || 0,
+      width: this.sim?.width || 0,
+      supportPolygon: this.sim?.supportPolygon,
+      heldMass: this.heldBlockId ? 0.3 : 0,
+      heldOffset: {x: (this.sim?.reach || 0) * 0.5, z: 0},
+    });
+    return {
+      mass: this.sim?.mass || 0,
+      width: this.sim?.width || 0,
+      reach: this.sim?.reach || 0,
+      com: this.sim?.com || {x: 0, y: 0, z: 0},
+      gripperOpen: this.gripperOpen,
+      tipMargin: tip.margin,
+      tipRisk: tip.margin != null && tip.margin < 0.02,
+      controls: ctrl,
+    };
   }
 
   _toolWorld() {
     if (!this.sim || !this.blueprint) return null;
     const defs = indexPartDefs(this.partDefs);
-    const poses = worldPosesWithJoints(this.blueprint, defs, this.jointAngles);
+    const poses = worldPosesWithJoints(this.blueprint, defs, this.jointAngles, this.jointSlides);
     const tool = toolLink(this.sim);
     if (!tool) return null;
     const local = poses[tool.id] || {x: 0, y: 0, z: 0};
@@ -310,7 +358,8 @@ export class YardScene {
 
   _targetBlock() {
     if (this.world.challengeMode) {
-      return this.world.blocks.find((b) => b.id === DRAWER_BLOCK_ID) || this.world.blocks[0];
+      const id = this.world.challengeKind === 'desk-gap-rescue' ? DESK_GAP_BLOCK_ID : DRAWER_BLOCK_ID;
+      return this.world.blocks.find((b) => b.id === id) || this.world.blocks[0];
     }
     return this.world.blocks[0];
   }
@@ -322,7 +371,7 @@ export class YardScene {
       const held = this.world.blocks.find((b) => b.id === this.heldBlockId) || block;
       const tool = this._toolWorld() || {x: this.drive.x, y: 0.1, z: this.drive.z, yaw: this.drive.yaw};
       held.x = tool.x;
-      held.y = 0.04;
+      held.y = Math.max(0.04, tool.y);
       held.z = tool.z;
       this.heldBlockId = null;
       this._syncBlocks();
@@ -330,6 +379,7 @@ export class YardScene {
     }
     const tool = this._toolWorld();
     if (!tool) return {success: false, reason: '蓝图上没有夹爪/推板/钩子'};
+    this._refreshPoseSim();
     const toolBehaviors = new Set(toolLink(this.sim)?.behaviors || []);
     let result;
     if (toolBehaviors.has('grasp')) {
@@ -356,8 +406,8 @@ export class YardScene {
     return result;
   }
 
-  setChallengeMode(on) {
-    this.world.setChallengeMode(!!on);
+  setChallengeMode(on, kind = 'drawer-block') {
+    this.world.setChallengeMode(!!on, kind);
     this.heldBlockId = null;
     this._prevBlockPos = null;
     this._blockSpeed = 0;
@@ -367,12 +417,14 @@ export class YardScene {
 
   /** 当前目标方块速度与是否在接收区（供提交按钮使用） */
   challengeStatus() {
-    const block = this.world.blocks.find((b) => b.id === DRAWER_BLOCK_ID);
+    const id = this.world.challengeKind === 'desk-gap-rescue' ? DESK_GAP_BLOCK_ID : DRAWER_BLOCK_ID;
+    const block = this.world.blocks.find((b) => b.id === id);
     if (!block) return null;
     return {
       block_id: block.id,
       region: this.world.blockInReceive(block) ? 'receive' : 'other',
       speed: this._blockSpeed,
+      challenge_id: this.world.challengeKind,
     };
   }
 
@@ -384,10 +436,14 @@ export class YardScene {
     this.heldBlockId = null;
     this.tipped = false;
     this.jointAngles = {};
+    this.jointSlides = {};
+    this.gripperOpen = 1;
     this._prevBlockPos = null;
     this._blockSpeed = 0;
     this._challengeReadySent = false;
+    this._fallCooldown = 0;
     this._syncBlocks();
+    this._refreshPoseSim();
     this._rebuildRobot();
     this.frameCameraToBounds();
   }
@@ -445,9 +501,13 @@ export class YardScene {
     this._clearRobot();
     if (!this.blueprint) return;
     const defs = indexPartDefs(this.partDefs);
-    const poses = worldPosesWithJoints(this.blueprint, defs, this.jointAngles);
+    const poses = worldPosesWithJoints(this.blueprint, defs, this.jointAngles, this.jointSlides);
     for (const inst of this.blueprint.instances || []) {
-      const size = sizeFor(inst.part_id, defs);
+      let size = sizeFor(inst.part_id, defs);
+      if (inst.part_id === 'gripper') {
+        const open = this.gripperOpen ?? 1;
+        size = [size[0] * (0.55 + open * 0.7), size[1], size[2]];
+      }
       const pose = poses[inst.instance_id] || {x: 0, y: 0, z: 0};
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(size[0] * SCALE, size[1] * SCALE, size[2] * SCALE),
@@ -475,7 +535,8 @@ export class YardScene {
 
   _trackChallenge(dt) {
     if (!this.world.challengeMode) return;
-    const block = this.world.blocks.find((b) => b.id === DRAWER_BLOCK_ID);
+    const id = this.world.challengeKind === 'desk-gap-rescue' ? DESK_GAP_BLOCK_ID : DRAWER_BLOCK_ID;
+    const block = this.world.blocks.find((b) => b.id === id);
     if (!block) return;
     if (this._prevBlockPos) {
       const dx = block.x - this._prevBlockPos.x;
@@ -498,12 +559,14 @@ export class YardScene {
         block_id: block.id,
         region: 'receive',
         speed: this._blockSpeed,
+        challenge_id: this.world.challengeKind,
       });
     }
   }
 
   _checkTip() {
     if (!this.sim || this.tipped) return;
+    this._refreshPoseSim();
     const held = this.heldBlockId
       ? this.world.blocks.find((b) => b.id === this.heldBlockId)
       : null;
@@ -511,18 +574,15 @@ export class YardScene {
     if (held) {
       const dx = held.x - this.drive.x;
       const dz = held.z - this.drive.z;
-      const cos = Math.cos(this.drive.yaw);
-      const sin = Math.sin(this.drive.yaw);
-      // 世界偏移 → 机器人局部（与 _toolWorld 的 R_yaw 互逆）
-      heldOffset = {
-        x: dx * cos - dz * sin,
-        z: dx * sin + dz * cos,
-      };
+      const c = Math.cos(-this.drive.yaw);
+      const s = Math.sin(-this.drive.yaw);
+      heldOffset = {x: dx * c - dz * s, z: dx * s + dz * c};
     }
     const tip = checkTip({
       com: this.sim.com,
       mass: this.sim.mass,
       width: this.sim.width,
+      supportPolygon: this.sim.supportPolygon,
       heldMass: held?.mass || 0,
       heldOffset,
     });
@@ -549,6 +609,16 @@ export class YardScene {
     this.last = now;
     if (!this.tipped) {
       stepDrive(this.drive, this.input, dt);
+      if (this.world.inDeskGap?.(this.drive.x, this.drive.z)) {
+        this._fallCooldown += dt;
+        if (this._fallCooldown > 0.35) {
+          this._fallCooldown = 0;
+          this.callbacks.onGrasp?.({success: false, reason: '掉进桌缝了，已回到起点——试试加长手臂或绕行'});
+          this.reset();
+        }
+      } else {
+        this._fallCooldown = 0;
+      }
       this._updateHeld();
       this._trackChallenge(dt);
       this._checkTip();

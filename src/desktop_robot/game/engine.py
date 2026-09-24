@@ -13,7 +13,12 @@ from desktop_robot.game.blueprints import (
     structure_metrics,
     validate_blueprint,
 )
-from desktop_robot.game.missions_open import CHALLENGE, OPEN_CHALLENGES, evaluate_drawer_result
+from desktop_robot.game.missions_open import (
+    CHALLENGE,
+    CHALLENGES_BY_ID,
+    OPEN_CHALLENGES,
+    evaluate_drawer_result,
+)
 from desktop_robot.game.parts import PART_DEFINITIONS
 from desktop_robot.passport.generate import generate_robot
 
@@ -102,6 +107,7 @@ def initial_state() -> dict:
         accent="teal",
         blueprints=[bp.model_dump(mode="json")],
         active_blueprint_id=bp.id,
+        component_library=[],
     )
 
 
@@ -119,6 +125,7 @@ def migrate_state(state: dict) -> dict:
         state["version"] = 3
     state.setdefault("completed_challenges", [])
     state.setdefault("challenge", None)
+    state.setdefault("component_library", [])
     return state
 
 
@@ -333,29 +340,33 @@ def apply_action(state: dict, payload: dict) -> str:
         return "试验场已复位。"
     if action == "start_challenge":
         mission_id = payload.get("mission")
-        if mission_id != CHALLENGE["id"]:
+        challenge_def = CHALLENGES_BY_ID.get(mission_id)
+        if not challenge_def:
             raise GameError("找不到这个开放挑战。")
         bp = _active_blueprint_raw(state)
         if not bp:
             raise GameError("当前没有可带进挑战的蓝图。")
         state["challenge"] = {
-            "id": CHALLENGE["id"],
+            "id": challenge_def["id"],
             "run_id": uuid4().hex,
             "blueprint_id": bp.get("id"),
             "blueprint_version": int(bp.get("version") or bp.get("revision") or 1),
             "started": True,
+            "block_id": challenge_def.get("block_id"),
         }
-        return "抽屉挑战已开始：把方块运到接收区并停稳。"
+        return f"{challenge_def['title']}已开始：{challenge_def['subtitle']}。"
     if action == "submit_challenge":
         challenge = state.get("challenge")
         if not isinstance(challenge, dict) or not challenge.get("run_id"):
-            raise GameError("请先开始抽屉挑战。")
+            raise GameError("请先开始开放挑战。")
         if payload.get("run_id") != challenge["run_id"]:
             raise GameError("挑战回合已过期，请重新开始。")
         if challenge.get("blueprint_id") != state.get("active_blueprint_id"):
             raise GameError("挑战蓝图与当前蓝图不一致，请重新开始挑战。")
+        challenge_def = CHALLENGES_BY_ID.get(challenge.get("id"), CHALLENGE)
         result = evaluate_drawer_result(
             {
+                "challenge_id": challenge.get("id"),
                 "block_id": payload.get("block_id"),
                 "region": payload.get("region"),
                 "speed": payload.get("speed"),
@@ -364,16 +375,36 @@ def apply_action(state: dict, payload: dict) -> str:
         if not result["ok"]:
             raise GameError(result["reason"])
         completed = state.setdefault("completed_challenges", [])
-        first = CHALLENGE["id"] not in completed
+        first = challenge_def["id"] not in completed
         if first:
-            state["coins"] += int(CHALLENGE["reward"])
-            state["xp"] += int(CHALLENGE["xp"])
-            completed.append(CHALLENGE["id"])
+            state["coins"] += int(challenge_def["reward"])
+            state["xp"] += int(challenge_def["xp"])
+            completed.append(challenge_def["id"])
             return (
-                f"挑战完成！获得 {CHALLENGE['reward']} 零件币和 "
-                f"{CHALLENGE['xp']} 默契。"
+                f"挑战完成！获得 {challenge_def['reward']} 零件币和 "
+                f"{challenge_def['xp']} 默契。"
             )
         return "再次完成挑战！首次奖励已经领取，这次留下新的练习。"
+    if action == "save_component":
+        raw = payload.get("component")
+        if not isinstance(raw, dict) or not raw.get("id") or not raw.get("instances"):
+            raise GameError("需要提供有效的组件对象。")
+        library = list(state.get("component_library") or [])
+        library = [c for c in library if c.get("id") != raw["id"]]
+        library.append(raw)
+        if len(library) > 32:
+            raise GameError("组件库已满（最多 32 个），请先删除旧组件。")
+        state["component_library"] = library
+        return f"组件「{raw.get('name') or raw['id']}」已保存。"
+    if action == "delete_component":
+        cid = payload.get("component_id")
+        if not isinstance(cid, str) or not cid:
+            raise GameError("需要 component_id。")
+        before = list(state.get("component_library") or [])
+        state["component_library"] = [c for c in before if c.get("id") != cid]
+        if len(state["component_library"]) == len(before):
+            raise GameError("找不到该组件。")
+        return "组件已删除。"
     if action == "appearance":
         if payload.get("accent") not in ("teal", "amber", "sage"):
             raise GameError("请选择已有配色。")

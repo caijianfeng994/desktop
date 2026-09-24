@@ -5,16 +5,19 @@ import {attachPart, detachSubtree, setInstanceParams} from './editor/assemble.mj
 import {buildEmptyCoreTemplate, buildQuadChassisArmTemplate} from './editor/templates.mjs';
 import {PARAM_SPECS} from './editor/params.mjs';
 import {explainAttachFailure} from './editor/compatible.mjs';
+import {ACTIONS, autoBindings, setBinding} from './editor/bindings.mjs';
+import {extractComponent, instantiateComponent} from './editor/components.mjs';
 import {findNavControl} from './nav.mjs';
 import {blueprintHasTool, formatBuildStatus, shouldSyncFromServer} from './buildDraft.mjs';
 
-const FREEFORM_PARTS = ['wheel', 'plate', 'beam', 'post', 'revolute_joint', 'gripper', 'pusher', 'hook'];
+const FREEFORM_PARTS = ['wheel', 'plate', 'beam', 'post', 'revolute_joint', 'prism_joint', 'gripper', 'pusher', 'hook', 'battery'];
 const CHILD_POINT = {
   wheel: 'hub',
   plate: 'face_a',
   beam: 'end_b',
   post: 'end_b',
   revolute_joint: 'in',
+  prism_joint: 'in',
   gripper: 'mount',
   pusher: 'mount',
   hook: 'mount',
@@ -31,8 +34,9 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];co
 let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navigating=false;
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
 let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
-let buildDirty=false,buildSaving=false,buildSaveFailed=false;
-let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0},yardChallengeSubmitting=false;
+let buildDirty=false,buildSaving=false,buildSaveFailed=false,pendingComponent=null;
+let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0},yardChallengeSubmitting=false;
+let yardDiagTimer=null;
 function toast(text){if(!text)return;$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4200)}
 function showModal(content){$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();icons(modal)}
 $('.modal-close').onclick=()=>modal.close();modal.addEventListener('click',e=>{if(e.target===modal){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close()}});
@@ -63,8 +67,9 @@ async function navigate(next,replace=false,{force=false}={}){
  else editorScene?.resize();
  if(next==='yard')await ensureYardScene();
  else if(leavingYard){
-  yardKeys={forward:0,turn:0,joint:0};
+  yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0};
   yardScene?.setInput(0,0);
+  if(yardDiagTimer){clearInterval(yardDiagTimer);yardDiagTimer=null}
  }
 }
 window.addEventListener('popstate',()=>navigate(location.hash.slice(1)||'home',true));
@@ -165,7 +170,56 @@ function updateBuildChrome(){
   });
  }
  renderBuildParams();
+ renderBuildBindings();
+ renderComponentLibrary();
  editorScene?.setPendingPart?.(pendingBuildPart);
+}
+function renderBuildBindings(){
+ const panel=$('#build-bindings');
+ if(!panel||!buildBp)return;
+ const bindings=autoBindings(buildBp);
+ const labels={lift:'抬臂',extend:'伸缩',grasp:'夹取',drive:'驾驶',turn:'转向'};
+ panel.innerHTML=`<div class="panel-heading"><h2>控制绑定</h2><small>选中后点动作</small></div>`+
+  ACTIONS.map(action=>{
+   const ids=bindings[action]||[];
+   return `<div class="bind-row"><button type="button" class="dark bind-action" data-bind-action="${action}">${labels[action]||action}</button><span>${ids.length?ids.map(esc).join(', '):'（未绑定）'}</span></div>`;
+  }).join('')+
+  `<button type="button" class="text-button" id="build-auto-bind">自动绑定可驱动件</button>`;
+ panel.querySelectorAll('[data-bind-action]').forEach(btn=>{
+  btn.onclick=()=>{
+   if(!buildSelected){toast('先选中要绑定的零件');return}
+   const action=btn.dataset.bindAction;
+   const cur=autoBindings(buildBp)[action]||[];
+   const nextIds=cur.includes(buildSelected)?cur.filter(id=>id!==buildSelected):[...cur,buildSelected];
+   applyBuildBlueprint(setBinding(buildBp,action,nextIds));
+   toast(`已更新 ${labels[action]||action} 绑定`);
+  };
+ });
+ $('#build-auto-bind')?.addEventListener('click',()=>{
+  const auto=autoBindings({...buildBp,bindings:{}});
+  let next=buildBp;
+  for(const action of ACTIONS) next=setBinding(next,action,auto[action]);
+  applyBuildBlueprint(next);
+  toast('已按零件类型自动绑定');
+ });
+}
+function renderComponentLibrary(){
+ const panel=$('#build-components');
+ if(!panel)return;
+ const lib=state?.component_library||[];
+ panel.innerHTML=`<div class="panel-heading"><h2>自制组件</h2><small>${lib.length}</small></div>`+
+  (lib.length?lib.map(c=>`<button type="button" class="build-part-btn" data-place-component="${esc(c.id)}">${esc(c.name||c.id)} · ${c.instances?.length||0}件</button>`).join(''):'<p class="tip">选中子结构后点「存为组件」</p>');
+ panel.querySelectorAll('[data-place-component]').forEach(btn=>{
+  btn.onclick=()=>{
+   const comp=(state.component_library||[]).find(c=>c.id===btn.dataset.placeComponent);
+   if(!comp)return;
+   if(!buildSelected){toast('先选中要挂接的父零件');return}
+   pendingComponent=comp;
+   toast('已选组件：再点父零件上的绿色连接点放置');
+   pendingBuildPart=null;
+   updateBuildChrome();
+  };
+ });
 }
 function renderBuildParams(){
  const panel=$('#build-params');
@@ -222,6 +276,16 @@ async function ensureBuildEditor({resync=false}={}){
     getPartDefs:()=>state?.part_defs||window.__gamePartDefs||[],
     onSelect:(id)=>{buildSelected=id;editorScene.setSelected(id);pendingBuildPart=null;updateBuildChrome()},
     onPickPoint:(instanceId,pointId,meta)=>{
+     if(pendingComponent&&buildBp){
+      if(meta&&meta.compatible===false){toast(meta.reason||'连接点不兼容');return}
+      try{
+       const {blueprint}=instantiateComponent(buildBp,pendingComponent,{parentInstanceId:instanceId,parentPointId:pointId});
+       applyBuildBlueprint(blueprint);
+       pendingComponent=null;
+       toast('组件已挂上');
+      }catch(err){toast(err.message||'无法放置组件')}
+      return;
+     }
      if(!pendingBuildPart||!buildBp){toast('先在左侧选择要安装的零件');return}
      if(meta&&meta.compatible===false){toast(meta.reason||'连接点不兼容');return}
      const childPoint=CHILD_POINT[pendingBuildPart];
@@ -321,6 +385,14 @@ $('#build-detach')?.addEventListener('click',()=>{
   toast('已拆卸选中零件及其子树');
  }catch(err){toast(err.message||'无法拆卸')}
 });
+$('#build-save-component')?.addEventListener('click',async()=>{
+ if(!buildBp||!buildSelected){toast('先选中子结构的根零件');return}
+ try{
+  const comp=extractComponent(buildBp,buildSelected,{name:`组件-${buildSelected}`});
+  if(!await act('save_component',{component:comp}))return;
+  renderComponentLibrary();
+ }catch(err){toast(err.message||'无法保存组件')}
+});
 $('#build-save')?.addEventListener('click',async()=>{
  await saveBuildBlueprint();
 });
@@ -358,6 +430,7 @@ async function ensureYardScene(){
   yardScene.setBlueprint(activeBlueprint(),state?.part_defs||[]);
   yardScene.reset();
   syncYardChallengeUi();
+  startYardDiagnostics();
   return yardScene;
  }
  if(yardReady)return yardReady;
@@ -374,6 +447,7 @@ async function ensureYardScene(){
    yardScene.setBlueprint(activeBlueprint(),state?.part_defs||[]);
    yardScene.reset();
    syncYardChallengeUi();
+   startYardDiagnostics();
   }catch(error){
    console.error(error);
    toast('试验场未能启动');
@@ -384,24 +458,49 @@ async function ensureYardScene(){
  return yardReady;
 }
 
+function startYardDiagnostics(){
+ if(yardDiagTimer)clearInterval(yardDiagTimer);
+ yardDiagTimer=setInterval(()=>{
+  if(view!=='yard'||!yardScene)return;
+  const d=yardScene.diagnostics?.();
+  const el=$('#yard-diagnostics');
+  if(!el||!d)return;
+  const issues=(d.controls?.issues||[]).map(i=>i.message).slice(0,2);
+  el.textContent=`质量 ${d.mass.toFixed(2)}kg · 轮距宽 ${d.width.toFixed(2)}m · 可达 ${d.reach.toFixed(2)}m · 夹爪${d.gripperOpen>0.4?'张开':'闭合'}`+
+   (d.tipRisk?' · ⚠接近倾覆':'')+
+   (issues.length?` · ${issues.join('；')}`:'');
+ },400);
+}
+
 function syncYardChallengeUi(){
  const ch=state?.challenge;
- const on=!!(ch&&ch.started&&ch.id==='drawer-block');
- $('#yard-challenge')&&($('#yard-challenge').textContent=on?'挑战进行中':'开始抽屉挑战');
- $('#yard-challenge')&&($('#yard-challenge').disabled=!!on);
+ const on=!!(ch&&ch.started);
+ const id=ch?.id||'';
+ const drawerBtn=$('#yard-challenge');
+ const gapBtn=$('#yard-challenge-gap');
+ if(drawerBtn){
+  drawerBtn.textContent=on&&id==='drawer-block'?'抽屉进行中':'抽屉挑战';
+  drawerBtn.disabled=on&&id==='drawer-block';
+ }
+ if(gapBtn){
+  gapBtn.textContent=on&&id==='desk-gap-rescue'?'救援进行中':'跨桌缝救援';
+  gapBtn.disabled=on&&id==='desk-gap-rescue';
+ }
  const submit=$('#yard-submit-challenge');
  if(submit)submit.hidden=!on;
  if(yardScene){
-  if(on&&!yardScene.world?.challengeMode)yardScene.setChallengeMode(true);
-  if(!on&&yardScene.world?.challengeMode)yardScene.setChallengeMode(false);
+  if(on)yardScene.setChallengeMode(true,id);
+  else if(yardScene.world?.challengeMode)yardScene.setChallengeMode(false);
  }
 }
 
 function offerChallengeSuccess(first,challenge){
  const reward=first?(challenge?.reward??150):0;
  const xp=first?(challenge?.xp??60):0;
- showModal(`<div class="success-mark">${icon('star')}</div><span class="eyebrow" style="justify-content:center;margin-top:15px">DRAWER CHALLENGE</span><h2 style="text-align:center">${first?'抽屉里的方块，到手了。':'又一次稳稳送达。'}</h2><p style="text-align:center">夹、推或拖——结构决定解法，清单不设门槛。</p><div class="reward-summary"><div><strong>+${reward}</strong><small>零件币${first?'':' · 首次奖励已领取'}</small></div><div><strong>+${xp}</strong><small>伙伴默契</small></div></div><div class="dialog-actions"><button class="primary" id="challenge-ok">继续试验</button></div>`);
+ const title=challenge?.title||'开放挑战';
+ showModal(`<div class="success-mark">${icon('star')}</div><span class="eyebrow" style="justify-content:center;margin-top:15px">CHALLENGE</span><h2 style="text-align:center">${first?`${esc(title)}，完成了。`:'又一次稳稳送达。'}</h2><p style="text-align:center">结构决定解法——愿意的话，回编辑再改一版。</p><div class="reward-summary"><div><strong>+${reward}</strong><small>零件币${first?'':' · 首次奖励已领取'}</small></div><div><strong>+${xp}</strong><small>伙伴默契</small></div></div><div class="dialog-actions"><button class="dark" id="challenge-edit">回编辑</button><button class="primary" id="challenge-ok">继续试验</button></div>`);
  $('#challenge-ok').onclick=()=>modal.close();
+ $('#challenge-edit').onclick=()=>{modal.close();navigate('build')};
 }
 
 async function submitYardChallenge(payload){
@@ -412,8 +511,9 @@ async function submitYardChallenge(payload){
   return;
  }
  yardChallengeSubmitting=true;
- const challenge=(state.open_challenges||[]).find(c=>c.id==='drawer-block')||{reward:150,xp:60};
- const first=!(state.completed_challenges||[]).includes('drawer-block');
+ const cid=state.challenge.id;
+ const challenge=(state.open_challenges||[]).find(c=>c.id===cid)||{reward:150,xp:60,title:'挑战'};
+ const first=!(state.completed_challenges||[]).includes(cid);
  const data=await act('submit_challenge',{
   run_id:state.challenge.run_id,
   block_id:status.block_id,
@@ -422,6 +522,22 @@ async function submitYardChallenge(payload){
  },true);
  yardChallengeSubmitting=false;
  if(data)offerChallengeSuccess(first,challenge);
+}
+
+async function startYardChallenge(missionId){
+ if(!state)return;
+ const bp=activeBlueprint();
+ if(!blueprintHasTool(bp,state.part_defs||[])){
+  toast('当前蓝图缺少操作工具，已返回编辑');
+  await navigate('build');
+  return;
+ }
+ const data=await act('start_challenge',{mission:missionId});
+ if(!data)return;
+ yardScene?.setChallengeMode(true,missionId);
+ yardScene?.reset();
+ syncYardChallengeUi();
+ toast(missionId==='desk-gap-rescue'?'跨桌缝救援开始：小心掉缝，把方块救回接收区':'抽屉挑战开始：把方块运到接收区');
 }
 
 $('#yard-upright')?.addEventListener('click',()=>{yardScene?.upright();toast('已扶正')});
@@ -436,29 +552,16 @@ $('#yard-exit')?.addEventListener('click',async()=>{
  syncBuildFromState(true,{force:true});
  await navigate('build');
 });
-$('#yard-challenge')?.addEventListener('click',async()=>{
- if(!state)return;
- const bp=activeBlueprint();
- if(!blueprintHasTool(bp,state.part_defs||[])){
-  toast('当前蓝图缺少操作工具，已返回编辑');
-  await navigate('build');
-  return;
- }
- const data=await act('start_challenge',{mission:'drawer-block'});
- if(!data)return;
- yardScene?.setChallengeMode(true);
- yardScene?.reset();
- syncYardChallengeUi();
- toast('把抽屉缝里的方块运到青色接收区并停稳');
-});
+$('#yard-challenge')?.addEventListener('click',()=>startYardChallenge('drawer-block'));
+$('#yard-challenge-gap')?.addEventListener('click',()=>startYardChallenge('desk-gap-rescue'));
 $('#yard-submit-challenge')?.addEventListener('click',()=>submitYardChallenge());
 
 function syncYardDriveInput(){
  if(view!=='yard'||!yardScene)return;
  yardScene.setInput(yardKeys.forward,yardKeys.turn);
- if(yardKeys.joint){
-  yardScene.setJointDelta(yardKeys.joint*0.04);
- }
+ if(yardKeys.joint)yardScene.setJointDelta(yardKeys.joint*0.04);
+ if(yardKeys.extend)yardScene.setExtendDelta?.(yardKeys.extend*0.008);
+ if(yardKeys.grasp){yardScene.setGraspDelta?.(yardKeys.grasp);yardKeys.grasp=0}
 }
 
 document.addEventListener('keydown',e=>{
@@ -470,6 +573,8 @@ document.addEventListener('keydown',e=>{
    KeyA:['turn',1],ArrowLeft:['turn',1],
    KeyD:['turn',-1],ArrowRight:['turn',-1],
    KeyQ:['joint',1],KeyE:['joint',-1],
+   KeyZ:['extend',1],KeyC:['extend',-1],
+   KeyF:['grasp',-1],
   };
   const bind=driveMap[e.code];
   if(bind){e.preventDefault();yardKeys[bind[0]]=bind[1];syncYardDriveInput();return}
@@ -490,6 +595,7 @@ document.addEventListener('keyup',e=>{
   KeyA:['turn',1],ArrowLeft:['turn',1],
   KeyD:['turn',-1],ArrowRight:['turn',-1],
   KeyQ:['joint',1],KeyE:['joint',-1],
+  KeyZ:['extend',1],KeyC:['extend',-1],
  };
  const bind=driveMap[e.code];
  if(!bind)return;

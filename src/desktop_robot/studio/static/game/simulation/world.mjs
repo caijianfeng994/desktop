@@ -7,6 +7,7 @@
  */
 
 export const DRAWER_BLOCK_ID = 'drawer-cube';
+export const DESK_GAP_BLOCK_ID = 'rescue-cube';
 
 const DOOR_WIDTH = 0.25;
 const DOOR_Z = 1.15;
@@ -32,6 +33,11 @@ export const RECEIVE_ZONE = {
   minZ: -1.55,
   maxZ: -1.15,
 };
+
+/** 跨桌缝：近桌 / 缝 / 远桌（远桌较高） */
+export const NEAR_DESK = {minX: -0.7, maxX: 0.7, minZ: -1.7, maxZ: -0.55, y: 0};
+export const FAR_DESK = {minX: -0.55, maxX: 0.55, minZ: 0.55, maxZ: 1.55, y: 0.12};
+export const DESK_GAP = {minX: -0.8, maxX: 0.8, minZ: -0.5, maxZ: 0.5};
 
 function cloneBlock(b) {
   return {
@@ -132,12 +138,27 @@ export function createYardWorld() {
     },
   ];
 
+  const deskGapBlocks = [
+    {
+      id: DESK_GAP_BLOCK_ID,
+      x: (FAR_DESK.minX + FAR_DESK.maxX) / 2,
+      y: FAR_DESK.y + 0.04,
+      z: (FAR_DESK.minZ + FAR_DESK.maxZ) / 2,
+      size: [0.07, 0.07, 0.07],
+      mass: 0.3,
+    },
+  ];
+
   let challengeMode = false;
+  /** @type {'none'|'drawer-block'|'desk-gap-rescue'} */
+  let challengeKind = 'none';
   const blocks = practiceBlocks.map(cloneBlock);
   const spawn = {x: 0, z: -1.35, yaw: 0};
 
   function reloadBlocks() {
-    const source = challengeMode ? challengeBlocks : practiceBlocks;
+    let source = practiceBlocks;
+    if (challengeMode && challengeKind === 'desk-gap-rescue') source = deskGapBlocks;
+    else if (challengeMode) source = challengeBlocks;
     blocks.length = 0;
     for (const b of source) blocks.push(cloneBlock(b));
   }
@@ -146,8 +167,9 @@ export function createYardWorld() {
     reloadBlocks();
   }
 
-  function setChallengeMode(on) {
+  function setChallengeMode(on, kind = 'drawer-block') {
     challengeMode = !!on;
+    challengeKind = challengeMode ? (kind || 'drawer-block') : 'none';
     reloadBlocks();
   }
 
@@ -156,19 +178,39 @@ export function createYardWorld() {
     return pointInAabb(block.x ?? 0, block.y ?? 0.04, block.z ?? 0, RECEIVE_ZONE);
   }
 
+  /** 机器人是否掉进桌缝（非桌面支撑） */
+  function inDeskGap(x, z) {
+    if (challengeKind !== 'desk-gap-rescue') return false;
+    const inGap =
+      x >= DESK_GAP.minX && x <= DESK_GAP.maxX && z >= DESK_GAP.minZ && z <= DESK_GAP.maxZ;
+    if (!inGap) return false;
+    const onNear =
+      x >= NEAR_DESK.minX && x <= NEAR_DESK.maxX && z >= NEAR_DESK.minZ && z <= NEAR_DESK.maxZ;
+    const onFar =
+      x >= FAR_DESK.minX && x <= FAR_DESK.maxX && z >= FAR_DESK.minZ && z <= FAR_DESK.maxZ;
+    return !onNear && !onFar;
+  }
+
   return {
     walls,
     ramp,
     narrowDoor,
     drawerSlot: {...DRAWER_SLOT},
     receiveZone: {...RECEIVE_ZONE},
+    nearDesk: {...NEAR_DESK},
+    farDesk: {...FAR_DESK},
+    deskGap: {...DESK_GAP},
     blocks,
     spawn,
     get challengeMode() {
       return challengeMode;
     },
+    get challengeKind() {
+      return challengeKind;
+    },
     setChallengeMode,
     blockInReceive,
+    inDeskGap,
     reset,
   };
 }

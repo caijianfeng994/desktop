@@ -48,8 +48,16 @@ export function tryGrasp(sim, robotPose, toolWorld, block) {
   if (d > maxD) {
     return {success: false, reason: `夹爪距离过远（${d.toFixed(2)}m > ${maxD.toFixed(2)}m）`};
   }
+  const dy = Math.abs((toolWorld?.y ?? 0) - (block?.y ?? 0));
+  if (dy > 0.14) {
+    return {success: false, reason: `高度差过大（${dy.toFixed(2)}m），请抬臂或伸展接近`};
+  }
   if (!facingBlock(toolWorld, block)) {
     return {success: false, reason: '夹爪朝向不对，请转向方块再抓'};
+  }
+  const open = Number(sim?.gripperOpen);
+  if (Number.isFinite(open) && open > 0.4) {
+    return {success: false, reason: '夹爪未闭合：先按 F 闭合，再按 Space 抓取'};
   }
   return {success: true, reason: '已夹住方块'};
 }

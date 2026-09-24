@@ -12,6 +12,18 @@ export const PARAM_SPECS = Object.freeze({
   post: {
     height: {min: 0.06, max: 0.24, default: 0.12, label: '立柱高 (m)'},
   },
+  revolute_joint: {
+    limit_min: {min: -Math.PI, max: 0, default: -Math.PI / 2, label: '下限 (rad)'},
+    limit_max: {min: 0, max: Math.PI, default: Math.PI / 2, label: '上限 (rad)'},
+    drive_sign: {min: -1, max: 1, default: 1, label: '方向 (±1)'},
+    drive_scale: {min: 0.25, max: 2, default: 1, label: '比例'},
+  },
+  prism_joint: {
+    limit_min: {min: 0, max: 0.05, default: 0, label: '缩回 (m)'},
+    limit_max: {min: 0.04, max: 0.2, default: 0.12, label: '伸出 (m)'},
+    drive_sign: {min: -1, max: 1, default: 1, label: '方向 (±1)'},
+    drive_scale: {min: 0.25, max: 2, default: 1, label: '比例'},
+  },
 });
 
 const BASE_SIZE = Object.freeze({

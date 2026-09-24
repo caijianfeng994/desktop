@@ -54,9 +54,10 @@ function rotateY(x, z, angle) {
  * @param {Record<string, number>} [jointAngles] 子实例 id → 转角（rad）
  * @returns {Record<string, {x:number,y:number,z:number,rx:number,ry:number,rz:number}>}
  */
-export function worldPosesWithJoints(bp, partDefs = null, jointAngles = {}) {
+export function worldPosesWithJoints(bp, partDefs = null, jointAngles = {}, jointSlides = {}) {
   const defs = indexPartDefs(partDefs);
   const angles = jointAngles || {};
+  const slides = jointSlides || {};
   const byId = Object.fromEntries((bp.instances || []).map((i) => [i.instance_id, i]));
   const children = new Map();
   for (const c of bp.connections || []) {
@@ -82,14 +83,17 @@ export function worldPosesWithJoints(bp, partDefs = null, jointAngles = {}) {
       const local = {...zeroPose(), ...child.local_pose};
 
       let jointAngle = 0;
+      let slide = 0;
       if (conn.joint === 'revolute') {
         jointAngle = Number(angles[child.instance_id]) || 0;
+      } else if (conn.joint === 'prismatic') {
+        slide = Number(slides[child.instance_id]) || 0;
       }
 
-      // 父连接点 + 绕该点 Y 轴的关节角，再叠父级 yaw
+      // 父连接点 + 绕该点 Y 轴的关节角，再叠父级 yaw；prismatic 沿父局部 +Z
       const cx = -childPt.x + local.x;
       const cy = -childPt.y + local.y;
-      const cz = -childPt.z + local.z;
+      const cz = -childPt.z + local.z + slide;
       const swung = rotateY(cx, cz, jointAngle);
       const lx = parentPt.x + swung.x;
       const ly = parentPt.y + cy;
@@ -116,5 +120,5 @@ export function worldPosesWithJoints(bp, partDefs = null, jointAngles = {}) {
  * @returns {Record<string, {x:number,y:number,z:number,rx:number,ry:number,rz:number}>}
  */
 export function worldPosesFromBlueprint(bp, partDefs = null) {
-  return worldPosesWithJoints(bp, partDefs, {});
+  return worldPosesWithJoints(bp, partDefs, {}, {});
 }

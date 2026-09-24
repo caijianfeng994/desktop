@@ -62,5 +62,11 @@ def quad_chassis_arm_blueprint(
         root_instance_id="core-1",
         instances=instances,
         connections=connections,
-        bindings={},
+        bindings={
+            "drive": [],
+            "turn": [],
+            "lift": ["joint-1", "joint-2"],
+            "extend": [],
+            "grasp": ["gripper-1"],
+        },
     )
