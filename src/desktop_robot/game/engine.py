@@ -123,6 +123,10 @@ def migrate_state(state: dict) -> dict:
 
 
 def sync_blueprint_with_equipped(state: dict) -> None:
+    """改装页装卸经典零件时同步经典蓝图；自由装配作品不覆盖。"""
+    active = _active_blueprint_raw(state)
+    if _is_freeform_blueprint(active):
+        return
     bp = classic_xiaofang_blueprint(
         state["equipped"],
         blueprint_id=state.get("active_blueprint_id") or "classic",
@@ -130,6 +134,33 @@ def sync_blueprint_with_equipped(state: dict) -> None:
     state["active_blueprint_id"] = bp.id
     others = [b for b in state.get("blueprints", []) if b.get("id") != bp.id]
     state["blueprints"] = others + [bp.model_dump(mode="json")]
+
+
+_FREEFORM_PART_IDS = frozenset(
+    {
+        "plate",
+        "beam",
+        "post",
+        "wheel",
+        "drive_wheel",
+        "revolute_joint",
+        "prism_joint",
+        "gripper",
+        "pusher",
+        "hook",
+    }
+)
+
+
+def _is_freeform_blueprint(raw: dict | None) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    instances = raw.get("instances") or []
+    part_ids = {inst.get("part_id") for inst in instances}
+    if part_ids & _FREEFORM_PART_IDS:
+        return True
+    # 仅核心空机架也视为自由装配作品
+    return part_ids == {"core"}
 
 
 def power(state: dict) -> tuple[int, int]:
@@ -208,7 +239,10 @@ def apply_action(state: dict, payload: dict) -> str:
         if sum(PART_BY_ID[p]["ports"] for p in equipped) > 4:
             raise GameError("接口已满，请卸下一个零件。")
         state["equipped"] = equipped
+        before_bp = _active_blueprint_raw(state)
         sync_blueprint_with_equipped(state)
+        if _is_freeform_blueprint(before_bp):
+            return "经典零件已更新；自由装配蓝图未改动，请到自由装配页继续改结构。"
         return "装配已保存，伙伴的能力也更新了。"
     if action == "buy":
         part = payload.get("part")

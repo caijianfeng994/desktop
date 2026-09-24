@@ -24,6 +24,20 @@ function conn(parentInstanceId, parentPointId, childInstanceId, childPointId, jo
   };
 }
 
+export function buildEmptyCoreTemplate({
+  id = 'empty-core',
+  name = '空机架',
+} = {}) {
+  return {
+    id,
+    name,
+    root_instance_id: 'core-1',
+    instances: [inst('core-1', 'core')],
+    connections: [],
+    bindings: {},
+  };
+}
+
 /**
  * @returns {{
  *   id: string,

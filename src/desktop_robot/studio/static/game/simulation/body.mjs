@@ -1,6 +1,7 @@
 /**
  * 由蓝图构建简化刚体度量：质心、轮距、宽度、可达距离。
  */
+import {sizeFromParams} from '../editor/params.mjs';
 import {indexPartDefs, worldPosesFromBlueprint} from './pose.mjs';
 
 const ROLL_TRACK = new Set(['roll', 'track']);
@@ -66,7 +67,7 @@ export function buildSimFromBlueprint(bp, partDefs) {
     const def = defs.get(inst.part_id) || {};
     const pose = poses[inst.instance_id] || {x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0};
     const m = Number(def.mass_kg) || 0.01;
-    const size = def.size_m || [0.05, 0.05, 0.05];
+    const size = sizeFromParams(inst.part_id, def.size_m || [0.05, 0.05, 0.05], inst.params);
     const behaviors = def.behaviors || [];
     const conn = parentConn.get(inst.instance_id);
     const joint = conn?.joint || 'fixed';

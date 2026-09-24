@@ -5,9 +5,24 @@ from __future__ import annotations
 from desktop_robot.game.blueprints import Blueprint, Connection, PartInstance
 from desktop_robot.game.parts import Pose
 
-__all__ = ["quad_chassis_arm_blueprint"]
+__all__ = ["empty_core_blueprint", "quad_chassis_arm_blueprint"]
 
 _ZERO = Pose()
+
+
+def empty_core_blueprint(
+    blueprint_id: str = "empty-core",
+    name: str = "空机架",
+) -> Blueprint:
+    """仅核心根节点，供玩家从零装配。"""
+    return Blueprint(
+        id=blueprint_id,
+        name=name,
+        root_instance_id="core-1",
+        instances=[PartInstance("core-1", "core", _ZERO)],
+        connections=[],
+        bindings={},
+    )
 
 
 def quad_chassis_arm_blueprint(

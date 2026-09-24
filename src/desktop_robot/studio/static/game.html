@@ -32,15 +32,18 @@
   <button type="button" class="build-part-btn" data-build-part="wheel">单轮</button>
   <button type="button" class="build-part-btn" data-build-part="plate">板件</button>
   <button type="button" class="build-part-btn" data-build-part="beam">连接杆</button>
+  <button type="button" class="build-part-btn" data-build-part="post">立柱</button>
   <button type="button" class="build-part-btn" data-build-part="revolute_joint">转动关节</button>
   <button type="button" class="build-part-btn" data-build-part="gripper">夹爪</button>
   <button type="button" class="build-part-btn" data-build-part="pusher">推板</button>
   <button type="button" class="build-part-btn" data-build-part="hook">钩子</button>
- </div><p class="panel-foot">核心已在蓝图中 · 先选零件，再点高亮连接点</p></aside>
+ </div><div id="build-params" class="build-params"><p class="tip">选中零件后可调尺寸参数</p></div><p class="panel-foot">从空机架开始 · 绿色连接点可装</p></aside>
  <div class="build-toolbar paper">
+  <button type="button" class="dark" id="build-new-empty">新建空机架</button>
   <button type="button" class="dark" id="build-undo">撤销</button>
   <button type="button" class="dark" id="build-redo">重做</button>
-  <button type="button" class="dark" id="build-apply-quad">应用四轮模板</button>
+  <button type="button" class="dark" id="build-detach">拆卸选中</button>
+  <button type="button" class="dark" id="build-apply-quad">教学模板（可拆改）</button>
   <button type="button" class="primary" id="build-save">保存蓝图</button>
   <button type="button" class="dark" id="build-enter-yard">进入试验场</button>
  </div>

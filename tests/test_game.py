@@ -503,3 +503,23 @@ def test_enter_exit_yard_preserves_blueprint_id_and_instances(tmp_path):
 
     reset_state = action(store, 'yard_reset')
     assert reset_state['revision'] >= exited['revision']
+
+
+def test_equip_does_not_overwrite_freeform_or_empty_core(tmp_path):
+    from desktop_robot.game.templates import empty_core_blueprint
+
+    store = GameStore(tmp_path)
+    before = store.get()
+    empty = empty_core_blueprint(blueprint_id=before['active_blueprint_id']).model_dump(mode='json')
+    state = action(store, 'blueprint_replace', blueprint=empty)
+    active = next(b for b in state['blueprints'] if b['id'] == state['active_blueprint_id'])
+    assert len(active['instances']) == 1
+
+    # 改装页装卸不应回写经典蓝图覆盖空机架
+    if 'camera' not in state['owned']:
+        state = action(store, 'buy', part='camera')
+    msg_state = action(store, 'equip', part='camera')
+    active2 = next(b for b in msg_state['blueprints'] if b['id'] == msg_state['active_blueprint_id'])
+    assert len(active2['instances']) == 1
+    assert active2['instances'][0]['part_id'] == 'core'
+    assert 'camera' in msg_state['equipped']

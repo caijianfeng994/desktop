@@ -1,6 +1,7 @@
 /**
  * 蓝图装配原语：在 plain object 副本上增删转，返回新蓝图。
  */
+import {normalizeParams} from './params.mjs';
 
 function cloneBp(bp) {
   return structuredClone(bp);
@@ -89,7 +90,7 @@ export function attachPart(bp, opts) {
     instance_id: iid,
     part_id: partId,
     local_pose: zeroPose(),
-    params: {},
+    params: normalizeParams(partId, opts.params || {}),
   });
   next.connections.push({
     parent_instance_id: parentInstanceId,
@@ -157,5 +158,23 @@ export function rotateInstance(bp, instanceId, yawDeltaRad) {
   const pose = {...inst.local_pose};
   pose.ry = (pose.ry || 0) + yawDeltaRad;
   inst.local_pose = pose;
+  return next;
+}
+
+/**
+ * 更新实例参数（经 normalizeParams 限幅）。
+ * @param {object} bp
+ * @param {string} instanceId
+ * @param {Record<string, number>} paramsPatch
+ */
+export function setInstanceParams(bp, instanceId, paramsPatch) {
+  const next = cloneBp(bp);
+  const inst = next.instances.find((i) => i.instance_id === instanceId);
+  if (!inst) {
+    throw new Error(`实例不存在: ${instanceId}`);
+  }
+  const merged = {...(inst.params || {}), ...(paramsPatch || {})};
+  const normalized = normalizeParams(inst.part_id, merged);
+  inst.params = Object.keys(normalized).length ? normalized : merged;
   return next;
 }

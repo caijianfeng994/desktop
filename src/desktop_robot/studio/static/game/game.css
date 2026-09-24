@@ -3,7 +3,11 @@ body[data-view="build"] #world,body[data-view="yard"] #world{visibility:hidden}
 .build-status{font-size:11px;color:var(--muted);margin-top:8px}
 .build-parts{position:absolute;left:3%;top:127px;bottom:72px;width:220px;display:flex;flex-direction:column;padding:18px}
 .build-parts .panel-heading .text-button{padding:0;margin:0;font-size:10px}
-.build-parts.is-collapsed .build-palette,.build-parts.is-collapsed .panel-foot{display:none}
+.build-parts.is-collapsed .build-palette,.build-parts.is-collapsed .panel-foot,.build-parts.is-collapsed .build-params{display:none}
+.build-params{margin-top:12px;display:grid;gap:8px}
+.build-param-row{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:center;font-size:11px;color:var(--muted)}
+.build-param-row input[type=range]{grid-column:1/-1;width:100%}
+.build-param-row b{font-variant-numeric:tabular-nums;color:var(--ink)}
 .build-palette{display:grid;gap:8px;overflow:auto}
 .build-part-btn{border:1px solid #e5d8bf;background:#f0e7d5;border-radius:10px;padding:12px 10px;text-align:left;font-weight:650;font-size:12px}
 .build-part-btn:hover{border-color:#baaa86;transform:translateY(-1px)}

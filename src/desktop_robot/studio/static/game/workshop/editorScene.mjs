@@ -2,6 +2,9 @@
  * 蓝图三维建造场景：按实例生成盒体，高亮选中与连接点。
  */
 import * as THREE from 'three';
+import {classifyParentPoints} from '../editor/compatible.mjs';
+import {pointsForInstance, sizeFromParams} from '../editor/params.mjs';
+import {worldPosesFromBlueprint as posesFromSim} from '../simulation/pose.mjs';
 
 /** 与 Python PART_DEFINITIONS 对齐的 fallback 尺寸（米） */
 export const PART_SIZES = Object.freeze({
@@ -25,6 +28,8 @@ const COLORS = {
   selected: 0xecb557,
   core: 0x477e7c,
   marker: 0x62e9de,
+  markerOk: 0x4caf7a,
+  markerBad: 0xb07060,
   ground: 0xe8dac4,
 };
 
@@ -40,73 +45,24 @@ function indexPartDefs(partDefs) {
   return map;
 }
 
-function sizeFor(partId, defs) {
-  const d = defs.get(partId);
-  if (d?.size_m?.length >= 3) return d.size_m;
-  return PART_SIZES[partId] || [0.05, 0.05, 0.05];
-}
-
-function pointsFor(partId, defs) {
-  const d = defs.get(partId);
-  return d?.connection_points || [];
-}
-
-function pointPose(partId, pointId, defs) {
-  for (const p of pointsFor(partId, defs)) {
-    if (p.id === pointId) return {...zeroPose(), ...p.pose};
-  }
-  return zeroPose();
+function sizeFor(inst, defs) {
+  const d = defs.get(inst.part_id);
+  const base = d?.size_m?.length >= 3 ? d.size_m : (PART_SIZES[inst.part_id] || [0.05, 0.05, 0.05]);
+  return sizeFromParams(inst.part_id, base, inst.params);
 }
 
 /**
- * 平移优先世界位姿（对齐 blueprints.world_poses）。
- * @param {object} bp
- * @param {Map|object[]|null} partDefs
- * @returns {Record<string, {x:number,y:number,z:number,rx:number,ry:number,rz:number}>}
+ * 平移优先世界位姿（对齐 simulation/pose，含 params 缩放）。
  */
 export function worldPosesFromBlueprint(bp, partDefs = null) {
-  const defs = partDefs instanceof Map ? partDefs : indexPartDefs(partDefs);
-  const byId = Object.fromEntries((bp.instances || []).map((i) => [i.instance_id, i]));
-  const children = new Map();
-  for (const c of bp.connections || []) {
-    if (!children.has(c.parent_instance_id)) children.set(c.parent_instance_id, []);
-    children.get(c.parent_instance_id).push(c);
-  }
-  const poses = {};
-  const root = byId[bp.root_instance_id];
-  if (!root) return poses;
-  poses[root.instance_id] = {...zeroPose(), ...root.local_pose};
-
-  const stack = [root.instance_id];
-  while (stack.length) {
-    const parentId = stack.pop();
-    const parentPose = poses[parentId];
-    const parentInst = byId[parentId];
-    for (const conn of children.get(parentId) || []) {
-      const child = byId[conn.child_instance_id];
-      if (!child) continue;
-      const parentPt = pointPose(parentInst.part_id, conn.parent_point_id, defs);
-      const childPt = pointPose(child.part_id, conn.child_point_id, defs);
-      const local = {...zeroPose(), ...child.local_pose};
-      poses[child.instance_id] = {
-        x: parentPose.x + parentPt.x - childPt.x + local.x,
-        y: parentPose.y + parentPt.y - childPt.y + local.y,
-        z: parentPose.z + parentPt.z - childPt.z + local.z,
-        rx: local.rx,
-        ry: local.ry,
-        rz: local.rz,
-      };
-      stack.push(child.instance_id);
-    }
-  }
-  return poses;
+  return posesFromSim(bp, partDefs);
 }
 
 /**
  * @param {HTMLElement} container
  * @param {{
  *   onSelect?: (instanceId: string|null) => void,
- *   onPickPoint?: (instanceId: string, pointId: string) => void,
+ *   onPickPoint?: (instanceId: string, pointId: string, meta?: {compatible:boolean, reason?:string}) => void,
  *   getPartDefs?: () => object[],
  * }} [callbacks]
  */
@@ -116,6 +72,7 @@ export class BlueprintEditorScene {
     this.callbacks = callbacks;
     this.blueprint = null;
     this.selectedId = null;
+    this.pendingPartId = null;
     this.disposed = false;
     this.meshes = new Map();
     this.markers = new THREE.Group();
@@ -206,6 +163,11 @@ export class BlueprintEditorScene {
     this._rebuildMarkers();
   }
 
+  setPendingPart(partId) {
+    this.pendingPartId = partId || null;
+    this._rebuildMarkers();
+  }
+
   _clearRoot() {
     while (this.root.children.length) {
       const child = this.root.children[0];
@@ -230,7 +192,7 @@ export class BlueprintEditorScene {
     const defs = this._partDefs();
     const poses = worldPosesFromBlueprint(this.blueprint, defs);
     for (const inst of this.blueprint.instances || []) {
-      const size = sizeFor(inst.part_id, defs);
+      const size = sizeFor(inst, defs);
       const pose = poses[inst.instance_id] || zeroPose();
       const color = inst.part_id === 'core' ? COLORS.core : COLORS.default;
       const mesh = new THREE.Mesh(
@@ -272,12 +234,48 @@ export class BlueprintEditorScene {
     const inst = (this.blueprint.instances || []).find((i) => i.instance_id === this.selectedId);
     const mesh = this.meshes.get(this.selectedId);
     if (!inst || !mesh) return;
-    for (const point of pointsFor(inst.part_id, defs)) {
-      const pose = {...zeroPose(), ...point.pose};
-      const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.025, 12, 10),
-        new THREE.MeshBasicMaterial({color: COLORS.marker}),
+    const def = defs.get(inst.part_id);
+    const points = pointsForInstance(
+      inst.part_id,
+      def?.connection_points,
+      inst.params,
+      def?.size_m || PART_SIZES[inst.part_id],
+    );
+
+    let compatibleIds = null;
+    const reasonById = new Map();
+    if (this.pendingPartId) {
+      const {compatible, incompatible} = classifyParentPoints(
+        this.blueprint,
+        this.selectedId,
+        this.pendingPartId,
+        defs,
       );
+      compatibleIds = new Set(compatible.map((c) => c.pointId));
+      for (const row of incompatible) reasonById.set(row.pointId, row.reason);
+    }
+
+    for (const point of points) {
+      let color = COLORS.marker;
+      let compatible = true;
+      let reason = '';
+      if (compatibleIds) {
+        compatible = compatibleIds.has(point.id);
+        color = compatible ? COLORS.markerOk : COLORS.markerBad;
+        reason = reasonById.get(point.id) || '';
+        if (!compatible) {
+          // 仍显示，半透明，便于解释失败
+        }
+      }
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(compatibleIds && compatible ? 0.032 : 0.022, 12, 10),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: !compatible && !!compatibleIds,
+          opacity: !compatible && !!compatibleIds ? 0.45 : 1,
+        }),
+      );
+      const pose = {...zeroPose(), ...point.pose};
       marker.position.set(
         mesh.position.x + pose.x * SCALE,
         mesh.position.y + pose.y * SCALE,
@@ -286,6 +284,8 @@ export class BlueprintEditorScene {
       marker.userData.instanceId = this.selectedId;
       marker.userData.pointId = point.id;
       marker.userData.isPoint = true;
+      marker.userData.compatible = compatible;
+      marker.userData.reason = reason;
       this.markers.add(marker);
     }
   }
@@ -304,7 +304,10 @@ export class BlueprintEditorScene {
     }
     const hit = hits[0].object;
     if (hit.userData.isPoint) {
-      this.callbacks.onPickPoint?.(hit.userData.instanceId, hit.userData.pointId);
+      this.callbacks.onPickPoint?.(hit.userData.instanceId, hit.userData.pointId, {
+        compatible: hit.userData.compatible !== false,
+        reason: hit.userData.reason || '',
+      });
       return;
     }
     if (hit.userData.instanceId) {

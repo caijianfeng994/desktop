@@ -1,25 +1,27 @@
 import {findPath, followPath} from './pathfinding.mjs';
 import {planStarterLoadout} from './loadout.mjs';
 import {createHistory} from './editor/commandHistory.mjs';
-import {attachPart} from './editor/assemble.mjs';
-import {buildQuadChassisArmTemplate} from './editor/templates.mjs';
+import {attachPart, detachSubtree, setInstanceParams} from './editor/assemble.mjs';
+import {buildEmptyCoreTemplate, buildQuadChassisArmTemplate} from './editor/templates.mjs';
+import {PARAM_SPECS} from './editor/params.mjs';
+import {explainAttachFailure} from './editor/compatible.mjs';
 import {findNavControl} from './nav.mjs';
 import {blueprintHasTool, formatBuildStatus, shouldSyncFromServer} from './buildDraft.mjs';
 
+const FREEFORM_PARTS = ['wheel', 'plate', 'beam', 'post', 'revolute_joint', 'gripper', 'pusher', 'hook'];
 const CHILD_POINT = {
   wheel: 'hub',
   plate: 'face_a',
   beam: 'end_b',
+  post: 'end_b',
   revolute_joint: 'in',
   gripper: 'mount',
   pusher: 'mount',
   hook: 'mount',
-  post: 'end_b',
   battery: 'mount',
   camera: 'mount',
   display: 'mount',
 };
-const FREEFORM_PARTS = ['wheel', 'plate', 'beam', 'revolute_joint', 'gripper', 'pusher', 'hook'];
 const VIEWS = ['home', 'assembly', 'build', 'yard', 'missions', 'play', 'companion', 'collection'];
 
 const paths={robot:'M7 7V4h10v3M5 8h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Zm3 5v2m8-2v2M9 18h6M1 12v4m22-4v4',home:'m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9',tool:'m14 5 5-2-1 5-5 5-3-3 4-5ZM10 10l-7 7a2 2 0 0 0 3 3l7-7',board:'M9 4h6v4H9zM7 6H5v15h14V6h-2M8 12h8m-8 4h5',book:'M12 5C8 2 3 3 2 4v15c4-2 7-1 10 1 3-2 6-3 10-1V4c-4-2-7-1-10 1Zm0 0v15',coin:'m8 3 8 0 5 7-3 10H6L3 10 8 3Zm2 5h4l2 4-2 4h-4l-2-4 2-4Z',battery:'M3 6h16v12H3zM21 10v4m-10-6-3 5h5l-2 3',help:'M9 9a3 3 0 1 1 4 3c-1 0-1 1-1 2m0 3v.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',arrow:'M4 12h15m-6-6 6 6-6 6',pin:'m9 3 8 4-3 4v4l-8-4 3-2V3Zm0 10-4 8',parts:'m12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10L3 7m9 5 9-5m-9 5v10M7 5l9 5',scan:'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0Zm-3 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',arm:'M4 21h12M7 20v-6l5-4-4-5 3-3 6 7v4l-5 4v3M17 10l4 1v5m-1-5 2-3',wheels:'M5 7h14v9H5zM2 9v6m20-6v6M7 17v3m10-3v3M8 10h8',tracks:'M6 7h12a5 5 0 0 1 0 10H6A5 5 0 0 1 6 7Zm1 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z',face:'M3 4h18v15H3zM7 9v2m10-2v2M8 14q4 4 8 0M9 22h6',rotate:'M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 14-1l1 6M4 12l1 6a8 8 0 0 0 14-1',play:'m8 3 13 9-13 9V3Z',info:'M12 11v6m0-10v.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',move:'M12 2v20M2 12h20M8 6l4-4 4 4M8 18l4 4 4-4M6 8l-4 4 4 4m12-8 4 4-4 4',edit:'m4 15 12-12 5 5L9 20l-6 1 1-6Zm10-10 5 5',chat:'M4 3h16v14H9l-5 4V3Zm4 5h8m-8 4h5',blueprint:'M3 3h18v18H3zM7 3v3m4-3v2m4-2v3m4-3v2M7 11l4-3 6 4v6H7v-7Zm4-3v7h6',check:'m5 12 4 4L19 6',circle:'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z',star:'m12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 3-6Z',lock:'M6 10h12v11H6zM8 10V6a4 4 0 0 1 8 0v4m-4 5v2'};
@@ -150,6 +152,8 @@ function updateBuildChrome(){
  const undo=$('#build-undo'),redo=$('#build-redo');
  if(undo)undo.disabled=!buildHistory.canUndo;
  if(redo)redo.disabled=!buildHistory.canRedo;
+ const detach=$('#build-detach');
+ if(detach)detach.disabled=!buildSelected||buildSelected===buildBp?.root_instance_id;
  const status=$('#build-status');
  if(status){
   status.textContent=formatBuildStatus({
@@ -160,6 +164,35 @@ function updateBuildChrome(){
    instanceCount:(buildBp?.instances||[]).length,
   });
  }
+ renderBuildParams();
+ editorScene?.setPendingPart?.(pendingBuildPart);
+}
+function renderBuildParams(){
+ const panel=$('#build-params');
+ if(!panel)return;
+ const inst=(buildBp?.instances||[]).find(i=>i.instance_id===buildSelected);
+ if(!inst){
+  panel.innerHTML='<p class="tip">选中零件后可调尺寸参数</p>';
+  return;
+ }
+ const specs=PARAM_SPECS[inst.part_id];
+ if(!specs){
+  panel.innerHTML=`<p class="tip">${esc(inst.part_id)} · 暂无可调参数</p>`;
+  return;
+ }
+ panel.innerHTML=Object.entries(specs).map(([key,spec])=>{
+  const val=inst.params?.[key]??spec.default;
+  return `<label class="build-param-row"><span>${esc(spec.label)}</span><input type="range" min="${spec.min}" max="${spec.max}" step="0.01" value="${val}" data-param-key="${key}"><b>${Number(val).toFixed(2)}</b></label>`;
+ }).join('');
+ panel.querySelectorAll('input[data-param-key]').forEach(input=>{
+  const label=input.parentElement?.querySelector('b');
+  input.addEventListener('input',()=>{if(label)label.textContent=Number(input.value).toFixed(2)});
+  input.addEventListener('change',()=>{
+   const key=input.dataset.paramKey;
+   const next=setInstanceParams(buildBp,buildSelected,{[key]:Number(input.value)});
+   applyBuildBlueprint(next);
+  });
+ });
 }
 function applyBuildBlueprint(next,{push=true,dirty=true}={}){
  buildBp=next;
@@ -188,10 +221,13 @@ async function ensureBuildEditor({resync=false}={}){
    editorScene=new BlueprintEditorScene($('#build-world'),{
     getPartDefs:()=>state?.part_defs||window.__gamePartDefs||[],
     onSelect:(id)=>{buildSelected=id;editorScene.setSelected(id);pendingBuildPart=null;updateBuildChrome()},
-    onPickPoint:(instanceId,pointId)=>{
+    onPickPoint:(instanceId,pointId,meta)=>{
      if(!pendingBuildPart||!buildBp){toast('先在左侧选择要安装的零件');return}
+     if(meta&&meta.compatible===false){toast(meta.reason||'连接点不兼容');return}
      const childPoint=CHILD_POINT[pendingBuildPart];
      if(!childPoint){toast('未知零件连接点');return}
+     const fail=explainAttachFailure(buildBp,instanceId,pointId,pendingBuildPart,state?.part_defs||[]);
+     if(fail){toast(fail);return}
      try{
       const next=attachPart(buildBp,{
        partId:pendingBuildPart,
@@ -236,7 +272,7 @@ $('#build-part-palette')?.addEventListener('click',e=>{
  if(!buildSelected)buildSelected=buildBp?.root_instance_id||null;
  editorScene?.setSelected(buildSelected);
  updateBuildChrome();
- toast(`已选 ${btn.textContent}：点击高亮连接点放置`);
+ toast(`已选 ${btn.textContent.trim()}：绿色点可装，灰色点会说明原因`);
 });
 $('#build-undo')?.addEventListener('click',()=>{
  const prev=buildHistory.undo();
@@ -256,7 +292,34 @@ $('#build-apply-quad')?.addEventListener('click',()=>{
   name:active?.name||'四轮机架与两关节臂',
  });
  applyBuildBlueprint(tpl);
- toast('已应用四轮+臂模板（记得保存）');
+ toast('已应用教学模板（可继续拆改，记得保存）');
+});
+$('#build-new-empty')?.addEventListener('click',()=>{
+ if(!state)return;
+ showModal(`<span class="eyebrow">NEW CHASSIS</span><h2>新建空机架？</h2><p>将用仅含核心的空白作品替换当前编辑草稿（可撤销）。四轮教学模板仍可随时应用。</p><div class="dialog-actions"><button class="dark" id="cancel-empty">取消</button><button class="primary" id="confirm-empty">新建空机架</button></div>`);
+ $('#cancel-empty').onclick=()=>modal.close();
+ $('#confirm-empty').onclick=()=>{
+  modal.close();
+  const active=activeBlueprint();
+  const tpl=buildEmptyCoreTemplate({
+   id:active?.id||`empty-${Date.now().toString(36)}`,
+   name:'空机架',
+  });
+  applyBuildBlueprint(tpl);
+  buildSelected=tpl.root_instance_id;
+  editorScene?.setSelected(buildSelected);
+  toast('已从空机架开始，自由搭配零件');
+ };
+});
+$('#build-detach')?.addEventListener('click',()=>{
+ if(!buildBp||!buildSelected){toast('先选中要拆卸的零件');return}
+ try{
+  const next=detachSubtree(buildBp,buildSelected);
+  applyBuildBlueprint(next);
+  buildSelected=next.root_instance_id;
+  editorScene?.setSelected(buildSelected);
+  toast('已拆卸选中零件及其子树');
+ }catch(err){toast(err.message||'无法拆卸')}
 });
 $('#build-save')?.addEventListener('click',async()=>{
  await saveBuildBlueprint();

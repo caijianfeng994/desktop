@@ -1,6 +1,7 @@
 /**
  * 蓝图世界位姿：平移连接合成；revolute 关节按 jointAngles 绕父连接点 Y 轴旋转。
  */
+import {pointsForInstance} from '../editor/params.mjs';
 
 function zeroPose() {
   return {x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0};
@@ -26,12 +27,15 @@ export function indexPartDefs(partDefs) {
   return map;
 }
 
-function pointsFor(partId, defs) {
-  return defs.get(partId)?.connection_points || [];
-}
-
-function pointPose(partId, pointId, defs) {
-  for (const p of pointsFor(partId, defs)) {
+function pointPoseForInst(inst, pointId, defs) {
+  const def = defs.get(inst?.part_id);
+  const points = pointsForInstance(
+    inst?.part_id,
+    def?.connection_points,
+    inst?.params,
+    def?.size_m,
+  );
+  for (const p of points) {
     if (p.id === pointId) return {...zeroPose(), ...p.pose};
   }
   return zeroPose();
@@ -73,8 +77,8 @@ export function worldPosesWithJoints(bp, partDefs = null, jointAngles = {}) {
     for (const conn of children.get(parentId) || []) {
       const child = byId[conn.child_instance_id];
       if (!child) continue;
-      const parentPt = pointPose(parentInst.part_id, conn.parent_point_id, defs);
-      const childPt = pointPose(child.part_id, conn.child_point_id, defs);
+      const parentPt = pointPoseForInst(parentInst, conn.parent_point_id, defs);
+      const childPt = pointPoseForInst(child, conn.child_point_id, defs);
       const local = {...zeroPose(), ...child.local_pose};
 
       let jointAngle = 0;

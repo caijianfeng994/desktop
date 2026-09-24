@@ -1,7 +1,16 @@
-"""四轮机架 + 两关节臂预制蓝图模板。"""
+"""空机架与四轮机架预制蓝图模板。"""
 
 from desktop_robot.game.blueprints import Blueprint, validate_blueprint
-from desktop_robot.game.templates import quad_chassis_arm_blueprint
+from desktop_robot.game.templates import empty_core_blueprint, quad_chassis_arm_blueprint
+
+
+def test_empty_core_blueprint_validates():
+    bp = empty_core_blueprint()
+    assert isinstance(bp, Blueprint)
+    assert validate_blueprint(bp) == []
+    assert len(bp.instances) == 1
+    assert bp.instances[0].part_id == "core"
+    assert bp.connections == []
 
 
 def test_quad_chassis_arm_template_validates():
