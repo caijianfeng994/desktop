@@ -240,15 +240,17 @@
     }
   }
   </script>
+  <link rel="stylesheet" href="/game-assets/legacy.css">
 </head>
 <body>
+  <a class="workshop-return" href="/game#collection">← 返回小小工坊</a>
   <div class="wrap">
     <div class="top">
       <div>
         <strong id="title">机器人</strong>
         <div style="color:var(--muted);font-size:0.85rem;" id="subtitle">加载中…</div>
       </div>
-      <div class="top-actions"><a id="design-link" href="/design.html">工程与制造</a><a href="/publish.html">发布大厅</a><button class="publish-btn" id="publish-btn" type="button">发布制作</button><a href="/">← 再养一只</a></div>
+      <div class="top-actions"><a id="design-link" href="/design.html">结构设计</a><a id="assembly-3d-link" href="/assembly-3d.html">3D 装配</a><a href="/publish.html">发布大厅</a><button class="publish-btn" id="publish-btn" type="button">发布制作</button><a id="home-link" href="/">线路首页</a><a href="/">← 再养一只</a></div>
     </div>
 
     <section class="stage">
@@ -1079,6 +1081,10 @@
       const p = data.passport;
       document.getElementById("design-link").href =
         `/design.html?robot=${encodeURIComponent(robotId)}`;
+      document.getElementById("assembly-3d-link").href =
+        `/assembly-3d.html?robot=${encodeURIComponent(robotId)}`;
+      document.getElementById("home-link").href =
+        `/?home=1&robot=${encodeURIComponent(robotId)}`;
       publishBtn.onclick = async () => {
         publishBtn.disabled = true;
         publishBtn.textContent = "发布中…";

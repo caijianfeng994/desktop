@@ -220,7 +220,7 @@ def test_legacy_game_migration_preserves_progress_and_adds_left_arm_once(tmp_pat
         raw.pop('active_blueprint_id', None)
         db.execute('UPDATE game SET state=? WHERE id=1', (json.dumps(raw),))
     migrated = GameStore(tmp_path).get()
-    assert migrated['version'] == 3
+    assert migrated['version'] == 4
     assert migrated['owned'].count('arm_left') == 1
     assert migrated['active_blueprint_id']
     assert len(migrated['blueprints']) >= 1
@@ -242,7 +242,7 @@ def test_v2_save_migrates_to_blueprint_without_losing_progress(tmp_path):
         raw.pop('active_blueprint_id', None)
         db.execute('UPDATE game SET state=? WHERE id=1', (json.dumps(raw),))
     migrated = GameStore(tmp_path).get()
-    assert migrated['version'] == 3
+    assert migrated['version'] == 4
     assert migrated['active_blueprint_id']
     assert len(migrated['blueprints']) >= 1
     assert set(migrated['equipped']) == set(state['equipped'])
@@ -327,7 +327,7 @@ def test_existing_active_save_can_pause_without_reset(tmp_path):
 
 def test_equip_updates_active_blueprint_instances(tmp_path):
     store = GameStore(tmp_path)
-    assert store.get()['version'] == 3
+    assert store.get()['version'] == 4
     before_ids = {i['part_id'] for b in store.get()['blueprints'] for i in b['instances']}
     action(store, 'equip', part='camera')
     state = store.get()
@@ -455,7 +455,7 @@ def test_snapshot_includes_part_defs(tmp_path):
     assert 'part_defs' in state
     by_id = {p['id']: p for p in state['part_defs']}
     assert 'core' in by_id
-    assert by_id['core']['size_m'] == [0.08, 0.08, 0.08]
+    assert by_id['core']['size_m'] == [0.1, 0.12, 0.1]
     assert any(cp['id'] == 'mount_top' for cp in by_id['core']['connection_points'])
     assert by_id['core']['mass_kg'] > 0
     assert 'behaviors' in by_id['wheel']

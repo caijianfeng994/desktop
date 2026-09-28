@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3D 装配</title>
+  <script type="importmap">
+    {"imports":{"three":"/vendor/three/three.module.js","three/addons/controls/OrbitControls.js":"/vendor/three/controls/OrbitControls.js"}}
+  </script>
+  <style>
+    :root { --bg:#0b1118; --panel:#121b25; --panel2:#182431; --line:#2a3948; --text:#ecf3f8; --muted:#8da0b1; --blue:#49a5ff; --green:#41d39b; --yellow:#f3b94f; --red:#ff7474; --shadow:0 18px 46px rgba(0,0,0,.26); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(900px 500px at 15% -10%,#183856 0,transparent 60%),var(--bg); font-family:"SF Pro Text","PingFang SC",system-ui,sans-serif; }
+    button { font:inherit; cursor:pointer; }
+    a { color:var(--blue); }
+    .topbar { height:64px; display:flex; align-items:center; gap:18px; padding:0 22px; border-bottom:1px solid var(--line); background:rgba(13,20,28,.9); backdrop-filter:blur(16px); }
+    .brand { font-weight:800; letter-spacing:-.02em; white-space:nowrap; color:inherit; text-decoration:none; }
+    .brand small { display:block; color:var(--muted); font-weight:500; font-size:10px; letter-spacing:.08em; }
+    .topbar-actions { display:flex; align-items:center; gap:10px; margin-left:auto; }
+    .ghost { color:var(--muted); background:transparent; border:1px solid var(--line); border-radius:9px; padding:9px 13px; font-weight:700; text-decoration:none; font-size:13px; }
+    .ghost:hover { border-color:var(--blue); color:var(--text); }
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:16px; padding:16px; max-width:1560px; margin:0 auto; align-items:start; }
+    .stage { position:relative; height:calc(100vh - 128px); min-height:460px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg,#0e1822,#0b1118); box-shadow:var(--shadow); overflow:hidden; }
+    #scene { position:absolute; inset:0; }
+    #scene canvas { display:block; width:100%; height:100%; }
+    .stage-overlay { position:absolute; left:16px; top:14px; display:grid; gap:6px; pointer-events:none; }
+    .badge { justify-self:start; border-radius:999px; padding:5px 12px; font-size:12px; font-weight:700; border:1px solid var(--line); background:rgba(11,17,24,.82); }
+    .badge.ready { color:var(--green); border-color:#2b6b53; }
+    .badge.provisional { color:var(--yellow); border-color:#6d5626; }
+    .badge.empty { color:var(--muted); }
+    .axis-note { color:var(--muted); font-size:11px; line-height:1.6; background:rgba(11,17,24,.82); border:1px solid var(--line); border-radius:9px; padding:7px 10px; }
+    .stage-empty { position:absolute; inset:0; display:grid; place-items:center; padding:28px; text-align:center; background:rgba(11,17,24,.72); }
+    .stage-empty[hidden] { display:none; }
+    .stage-empty div { max-width:460px; color:var(--muted); line-height:1.7; font-size:13px; }
+    .stage-empty strong { display:block; color:var(--text); font-size:16px; margin-bottom:8px; }
+    .draft-picker { display:grid; gap:8px; margin-top:16px; text-align:left; }
+    .draft-picker a { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--text); text-decoration:none; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:13px; }
+    .draft-picker a:hover { border-color:var(--blue); }
+    .draft-picker span { color:var(--muted); font-size:11px; }
+    .side { display:grid; gap:14px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:var(--shadow); }
+    .panel h2 { margin:0 0 4px; font-size:15px; }
+    .panel p.hint { margin:0; color:var(--muted); font-size:12px; line-height:1.6; }
+    .part-list { display:grid; gap:9px; margin-top:12px; }
+    .part { border:1px solid var(--line); border-radius:11px; padding:10px 11px; background:var(--panel2); }
+    .part-head { display:flex; align-items:center; gap:8px; }
+    .swatch { width:10px; height:10px; border-radius:3px; flex:none; }
+    .part strong { font-size:13px; }
+    .part dl { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; margin:8px 0 0; color:var(--muted); font-size:11px; line-height:1.55; }
+    .part dt { color:#6f8296; }
+    .part dd { margin:0; }
+    .tag { display:inline-block; margin-top:8px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+    .tag.missing { color:var(--yellow); background:#332913; }
+    .missing-list { margin:10px 0 0; padding-left:18px; color:var(--yellow); font-size:12px; line-height:1.7; }
+    .error { color:var(--red); font-size:12px; line-height:1.6; margin:10px 0 0; }
+    .muted { color:var(--muted); font-size:12px; line-height:1.6; }
+    @media(max-width:1080px){ .layout{grid-template-columns:1fr} .stage{height:60vh} }
+  </style>
+  <link rel="stylesheet" href="/game-assets/legacy.css">
+</head>
+<body>
+  <a class="workshop-return" href="/game#collection">← 返回小小工坊</a>
+  <header class="topbar">
+    <a class="brand" id="home-brand" href="/" title="返回线路首页">3D 装配<small>真实尺寸 · 毫米坐标</small></a>
+    <div class="topbar-actions">
+      <a class="ghost" id="design-link" href="/design.html">去补录尺寸与位姿</a>
+      <a class="ghost" id="studio-link" href="/?track=studio">形象与互动</a>
+      <a class="ghost" id="home-link" href="/">返回线路首页</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div id="scene"></div>
+      <div class="stage-overlay">
+        <span class="badge empty" id="status-badge">正在加载……</span>
+        <span class="axis-note">坐标：+X 前、+Y 左、+Z 上（REP-103） · 单位毫米 · 拖动旋转，滚轮缩放</span>
+      </div>
+      <div class="stage-empty" id="stage-empty" hidden>
+        <div>
+          <strong id="empty-title">还没有可显示的装配</strong>
+          <span id="empty-text">请从「机器人结构设计」补录零件的实际尺寸与安装位置，再回到本页查看。</span>
+          <div class="draft-picker" id="draft-picker" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel">
+        <h2>数据来源</h2>
+        <p class="hint" id="source-summary">正在读取……</p>
+        <p class="error" id="source-error" hidden></p>
+        <ul class="missing-list" id="missing-list" hidden></ul>
+      </div>
+      <div class="panel">
+        <h2>零件清单</h2>
+        <p class="hint">缺少安装位置的零件不会放进三维场景，避免臆造坐标。</p>
+        <div class="part-list" id="part-list"></div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const PLACEHOLDER_MM = 18;
+    const PART_COLORS = [0x49a5ff, 0x41d39b, 0xf3b94f, 0xff8f6b, 0xb98bff, 0x62d8e8, 0xf47ea8];
+
+    const state = { draftId: null, robotId: null, name: "desktop_robot", assembly: null, manifest: null };
+
+    const $ = selector => document.querySelector(selector);
+    const escapeHtml = value => String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+
+    const host = $("#scene");
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.01, 200);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    host.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.HemisphereLight(0xdaf1ff, 0x16202a, 2.2));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+    keyLight.position.set(0.4, 0.8, 0.6);
+    scene.add(keyLight);
+
+    const grid = new THREE.GridHelper(1, 20, 0x2a3948, 0x1b2733);
+    scene.add(grid);
+
+    // 工程坐标（+X 前、+Y 左、+Z 上）映射到 Three.js（Y 轴向上）。
+    const engineeringRoot = new THREE.Group();
+    engineeringRoot.matrixAutoUpdate = false;
+    engineeringRoot.matrix.set(
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      1, 0, 0, 0,
+      0, 0, 0, 1,
+    );
+    engineeringRoot.matrixWorldNeedsUpdate = true;
+    scene.add(engineeringRoot);
+
+    // 坐标轴画在工程坐标系里：红=+X 前，绿=+Y 左，蓝=+Z 上。
+    const axes = new THREE.AxesHelper(0.08);
+    engineeringRoot.add(axes);
+
+    let partsRoot = null;
+
+    function resize() {
+      const width = Math.max(1, host.clientWidth);
+      const height = Math.max(1, host.clientHeight);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height, false);
+    }
+    addEventListener("resize", resize);
+    resize();
+
+    (function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    })();
+
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.reason || `请求失败（${response.status}）`);
+      }
+      return data;
+    }
+
+    async function loadSource() {
+      const params = new URLSearchParams(location.search);
+      state.draftId = params.get("draft");
+      state.robotId = params.get("robot");
+      if (state.draftId) {
+        const data = await fetchJson(`/api/assembly/draft/${encodeURIComponent(state.draftId)}`);
+        state.assembly = data.data.assembly;
+        state.name = data.data.name || state.name;
+        return `工程草稿 ${state.draftId}`;
+      }
+      if (state.robotId) {
+        const data = await fetchJson(`/api/robot/${encodeURIComponent(state.robotId)}`);
+        if (!data.passport.hardware) throw new Error("该机器人没有硬件装配");
+        state.assembly = data.passport.hardware;
+        state.name = data.passport.name || state.name;
+        return `机器人 ${state.name}`;
+      }
+      return null;
+    }
+
+    function syncLinks() {
+      if (state.draftId) {
+        const home = `/?home=1&draft=${encodeURIComponent(state.draftId)}`;
+        $("#home-brand").href = home;
+        $("#home-link").href = home;
+        $("#design-link").href = `/design.html?draft=${encodeURIComponent(state.draftId)}`;
+        $("#studio-link").href = `/?track=studio&draft=${encodeURIComponent(state.draftId)}`;
+        return;
+      }
+      if (state.robotId) {
+        const home = `/?home=1&robot=${encodeURIComponent(state.robotId)}`;
+        $("#home-brand").href = home;
+        $("#home-link").href = home;
+        $("#design-link").href = `/design.html?robot=${encodeURIComponent(state.robotId)}`;
+        $("#studio-link").href = `/robot.html?id=${encodeURIComponent(state.robotId)}`;
+      }
+    }
+
+    function boxMesh(sizeMm, color, solid) {
+      const size = sizeMm.map(value => Math.max(Math.abs(value), 1) / 1000);
+      const geometry = new THREE.BoxGeometry(size[0], size[1], size[2]);
+      if (!solid) {
+        const wire = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry),
+          new THREE.LineBasicMaterial({ color }),
+        );
+        return wire;
+      }
+      return new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({ color, metalness: 0.15, roughness: 0.55 }),
+      );
+    }
+
+    function placePart(parent, { dimensions, position, rotation, color, solid }) {
+      const mesh = boxMesh(dimensions, color, solid);
+      mesh.position.set(position[0] / 1000, position[1] / 1000, position[2] / 1000);
+      const [roll, pitch, yaw] = rotation.map(deg => (deg * Math.PI) / 180);
+      mesh.setRotationFromEuler(new THREE.Euler(roll, pitch, yaw, "ZYX"));
+      parent.add(mesh);
+      return mesh;
+    }
+
+    function fitCamera(root) {
+      scene.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      if (box.isEmpty()) {
+        camera.position.set(0.25, 0.2, 0.32);
+        controls.target.set(0, 0, 0);
+        controls.update();
+        return;
+      }
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const radius = Math.max(size.length() / 2, 0.03);
+      const distance = radius / Math.tan((camera.fov * Math.PI) / 360) * 2.1;
+      camera.position.set(center.x + distance * 0.62, center.y + distance * 0.52, center.z + distance * 0.72);
+      camera.near = Math.max(radius / 120, 0.005);
+      camera.far = distance * 12;
+      camera.updateProjectionMatrix();
+      controls.target.copy(center);
+      controls.minDistance = radius * 0.6;
+      controls.maxDistance = distance * 6;
+      controls.update();
+      grid.scale.setScalar(Math.max(radius * 8, 0.2));
+      axes.scale.setScalar(Math.max(radius * 4, 0.5));
+    }
+
+    function renderManifest(manifest) {
+      if (partsRoot) engineeringRoot.remove(partsRoot);
+      partsRoot = new THREE.Group();
+      engineeringRoot.add(partsRoot);
+
+      const boardDimensions = manifest.board.physical.dimensions_mm;
+      if (boardDimensions) {
+        placePart(partsRoot, {
+          dimensions: boardDimensions,
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          color: 0x9fb4c7,
+          solid: true,
+        });
+      }
+
+      let placed = boardDimensions ? 1 : 0;
+      manifest.components.forEach((item, index) => {
+        if (!item.position_mm) return;
+        const color = PART_COLORS[index % PART_COLORS.length];
+        placePart(partsRoot, {
+          dimensions: item.physical.dimensions_mm || [PLACEHOLDER_MM, PLACEHOLDER_MM, PLACEHOLDER_MM],
+          position: item.position_mm,
+          rotation: item.rotation_rpy_deg || [0, 0, 0],
+          color,
+          solid: Boolean(item.physical.dimensions_mm),
+        });
+        placed += 1;
+      });
+
+      fitCamera(partsRoot);
+      return placed;
+    }
+
+    function renderSide(manifest) {
+      const cards = [];
+      const boardDimensions = manifest.board.physical.dimensions_mm;
+      cards.push(`
+        <div class="part">
+          <div class="part-head"><i class="swatch" style="background:#9fb4c7"></i><strong>${escapeHtml(manifest.board.name)}</strong></div>
+          <dl>
+            <dt>坐标系</dt><dd>base_link（原点）</dd>
+            <dt>尺寸</dt><dd>${boardDimensions ? `${boardDimensions.join(" × ")} mm` : "未补录"}</dd>
+            <dt>质量</dt><dd>${manifest.board.physical.mass_g ? `${manifest.board.physical.mass_g} g` : "未补录"}</dd>
+          </dl>
+          ${boardDimensions ? "" : '<span class="tag missing">尺寸未补录</span>'}
+        </div>`);
+
+      manifest.components.forEach((item, index) => {
+        const color = `#${PART_COLORS[index % PART_COLORS.length].toString(16).padStart(6, "0")}`;
+        const dimensions = item.physical.dimensions_mm;
+        const missing = item.missing_engineering_data || [];
+        cards.push(`
+          <div class="part">
+            <div class="part-head"><i class="swatch" style="background:${color}"></i><strong>${escapeHtml(item.name)}</strong></div>
+            <dl>
+              <dt>父坐标系</dt><dd>${escapeHtml(item.parent_frame || "base_link")}</dd>
+              <dt>安装位置</dt><dd>${item.position_mm ? `${item.position_mm.join(", ")} mm` : "未补录"}</dd>
+              <dt>安装旋转</dt><dd>${item.rotation_rpy_deg ? `${item.rotation_rpy_deg.join(", ")}°` : "默认 0, 0, 0"}</dd>
+              <dt>尺寸</dt><dd>${dimensions ? `${dimensions.join(" × ")} mm` : "未补录"}</dd>
+              <dt>关节</dt><dd>${item.joint ? escapeHtml(`${item.joint.type} · ${item.joint.name}`) : "固定"}</dd>
+            </dl>
+            ${missing.length ? `<span class="tag missing">未补录：${escapeHtml(missing.join("、"))}</span>` : ""}
+          </div>`);
+      });
+
+      $("#part-list").innerHTML = cards.join("");
+
+      const missingList = $("#missing-list");
+      if (manifest.missing_engineering_data.length) {
+        missingList.innerHTML = manifest.missing_engineering_data
+          .map(item => `<li>${escapeHtml(item.instance_id)}：${escapeHtml(item.fields.join("、"))}</li>`)
+          .join("");
+        missingList.hidden = false;
+      } else {
+        missingList.hidden = true;
+      }
+    }
+
+    function setBadge(text, kind) {
+      const badge = $("#status-badge");
+      badge.textContent = text;
+      badge.className = `badge ${kind}`;
+    }
+
+    function showEmpty(title, text) {
+      $("#empty-title").textContent = title;
+      $("#empty-text").textContent = text;
+      $("#stage-empty").hidden = false;
+    }
+
+    async function showDraftPicker() {
+      let drafts = [];
+      try {
+        drafts = (await fetchJson("/api/assembly/drafts")).drafts;
+      } catch {
+        return;
+      }
+      if (!drafts.length) return;
+      $("#draft-picker").innerHTML = drafts
+        .slice(0, 8)
+        .map(item => `
+          <a href="/assembly-3d.html?draft=${encodeURIComponent(item.draft_id)}">
+            <strong>${escapeHtml(item.name)}</strong>
+            <span>${item.component_count} 个零件 · ${escapeHtml(item.design_status)}</span>
+          </a>`)
+        .join("");
+      $("#draft-picker").hidden = false;
+    }
+
+    async function main() {
+      let sourceLabel = null;
+      try {
+        sourceLabel = await loadSource();
+      } catch (error) {
+        setBadge("加载失败", "empty");
+        $("#source-error").textContent = error.message;
+        $("#source-error").hidden = false;
+        $("#source-summary").textContent = "无法读取装配数据。";
+        showEmpty("无法读取装配数据", error.message);
+        return;
+      }
+      syncLinks();
+
+      if (!state.assembly) {
+        setBadge("未选择装配", "empty");
+        $("#source-summary").textContent = "打开工程草稿或已生成的机器人后，这里会按真实尺寸显示三维装配。";
+        showEmpty("还没有选择装配数据", "选择一份工程草稿，或先去「机器人结构设计」创建并补录尺寸。");
+        await showDraftPicker();
+        return;
+      }
+
+      $("#source-summary").textContent = `${sourceLabel} · ${state.assembly.components?.length || 0} 个零件`;
+
+      let exported;
+      try {
+        exported = await fetchJson("/api/assembly/design-export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ robot_name: state.name, assembly: state.assembly }),
+        });
+      } catch (error) {
+        setBadge("导出失败", "empty");
+        $("#source-error").textContent = error.message;
+        $("#source-error").hidden = false;
+        showEmpty("无法生成工程数据", error.message);
+        return;
+      }
+
+      state.manifest = exported.manifest;
+      renderSide(state.manifest);
+      const placed = renderManifest(state.manifest);
+
+      if (state.manifest.status === "ready") {
+        setBadge("ready · 工程字段齐全", "ready");
+      } else {
+        setBadge("provisional · 部分字段未补录", "provisional");
+      }
+
+      if (!placed) {
+        showEmpty(
+          "还没有可摆放的零件",
+          "所有零件都缺少 position_mm 或主控尺寸。补录后即可按真实毫米坐标显示。",
+        );
+      } else {
+        $("#stage-empty").hidden = true;
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>

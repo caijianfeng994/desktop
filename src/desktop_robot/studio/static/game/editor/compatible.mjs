@@ -40,6 +40,15 @@ export const DEFAULT_CHILD_POINT = Object.freeze({
   battery: 'mount',
   camera: 'mount',
   display: 'mount',
+  mecha_head: 'mount',
+  armor_torso: 'mount',
+  armor_shoulder: 'mount',
+  mecha_leg: 'mount',
+  backpack_frame: 'mount',
+  weapon_rifle: 'mount',
+  thruster_pack: 'mount',
+  winch_module: 'mount',
+  heavy_plate: 'mount',
 });
 
 /**

@@ -2,15 +2,22 @@ import {findPath, followPath} from './pathfinding.mjs';
 import {planStarterLoadout} from './loadout.mjs';
 import {createHistory} from './editor/commandHistory.mjs';
 import {attachPart, detachSubtree, setInstanceParams} from './editor/assemble.mjs';
-import {buildEmptyCoreTemplate, buildQuadChassisArmTemplate} from './editor/templates.mjs';
+import {buildEmptyCoreTemplate, buildEngineerMechaTemplate, buildQuadChassisArmTemplate} from './editor/templates.mjs';
 import {PARAM_SPECS} from './editor/params.mjs';
 import {explainAttachFailure} from './editor/compatible.mjs';
 import {ACTIONS, autoBindings, setBinding} from './editor/bindings.mjs';
 import {extractComponent, instantiateComponent} from './editor/components.mjs';
 import {findNavControl} from './nav.mjs';
-import {blueprintHasTool, formatBuildStatus, shouldSyncFromServer} from './buildDraft.mjs';
+import {blueprintHasTool, formatBuildStatus, shouldApplySaveResponse, shouldSyncFromServer} from './buildDraft.mjs';
+import {formatHangarMetricsHtml, hangarMetrics} from './editor/hangarMetrics.mjs';
+import {cockpitViewHint, groupInstancesByZone} from './workshop/mechaZones.mjs';
 
-const FREEFORM_PARTS = ['wheel', 'plate', 'beam', 'post', 'revolute_joint', 'prism_joint', 'gripper', 'pusher', 'hook', 'battery'];
+const FREEFORM_PARTS = [
+  'wheel', 'plate', 'beam', 'post', 'revolute_joint', 'prism_joint',
+  'gripper', 'pusher', 'hook', 'battery',
+  'mecha_head', 'armor_torso', 'armor_shoulder', 'mecha_leg', 'backpack_frame',
+  'weapon_rifle', 'thruster_pack', 'winch_module', 'heavy_plate',
+];
 const CHILD_POINT = {
   wheel: 'hub',
   plate: 'face_a',
@@ -24,6 +31,15 @@ const CHILD_POINT = {
   battery: 'mount',
   camera: 'mount',
   display: 'mount',
+  mecha_head: 'mount',
+  armor_torso: 'mount',
+  armor_shoulder: 'mount',
+  mecha_leg: 'mount',
+  backpack_frame: 'mount',
+  weapon_rifle: 'mount',
+  thruster_pack: 'mount',
+  winch_module: 'mount',
+  heavy_plate: 'mount',
 };
 const VIEWS = ['home', 'assembly', 'build', 'yard', 'missions', 'play', 'companion', 'collection'];
 
@@ -34,15 +50,47 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];co
 let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navigating=false;
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
 let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
+let pendingAttach=null; // {parentInstanceId, pointId, partId}
 let buildDirty=false,buildSaving=false,buildSaveFailed=false,pendingComponent=null;
-let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0},yardChallengeSubmitting=false;
+let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0,fire:0,thrust:0,winch:0},yardChallengeSubmitting=false;
 let yardDiagTimer=null;
+const THEME_KEY='gameVisualTheme';
+const THEME_IDS=new Set(['warm','mecha','wasteland','future']);
+function normalizeThemeId(id){
+ const s=String(id||'').trim().toLowerCase();
+ return THEME_IDS.has(s)?s:'warm';
+}
+function readStoredTheme(){
+ try{return normalizeThemeId(localStorage.getItem(THEME_KEY))}catch{return 'warm'}
+}
+function syncThemeButtons(themeId){
+ $$('.theme-btn').forEach(btn=>{
+  const on=btn.dataset.theme===themeId;
+  btn.classList.toggle('is-active',on);
+  btn.setAttribute('aria-pressed',on?'true':'false');
+ });
+}
+function applyVisualTheme(themeId,{persist=true}={}){
+ const id=normalizeThemeId(themeId);
+ if(persist){
+  try{localStorage.setItem(THEME_KEY,id)}catch{/* ignore */}
+ }
+ document.body.dataset.theme=id;
+ syncThemeButtons(id);
+ editorScene?.setTheme?.(id);
+ yardScene?.setTheme?.(id);
+ if(view==='build')requestAnimationFrame(()=>refitBuildEditor());
+}
 function toast(text){if(!text)return;$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4200)}
 function showModal(content){$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();icons(modal)}
 $('.modal-close').onclick=()=>modal.close();modal.addEventListener('click',e=>{if(e.target===modal){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close()}});
 async function navigate(next,replace=false,{force=false}={}){
  if(!state)return;
  if(!VIEWS.includes(next))next='home';
+ if(view==='build'&&next!=='build'&&buildDirty&&!force){
+  const leave=window.confirm('当前作品尚未保存。本地草稿会保留，但刷新可能丢失。仍要离开？');
+  if(!leave)return;
+ }
  const request=++navigationVersion;navigating=true;routeVersion++;scene?.setRoute([]);
  await actionSettled;
  if(request!==navigationVersion)return;
@@ -67,7 +115,7 @@ async function navigate(next,replace=false,{force=false}={}){
  else editorScene?.resize();
  if(next==='yard')await ensureYardScene();
  else if(leavingYard){
-  yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0};
+  yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0,fire:0,thrust:0,winch:0};
   yardScene?.setInput(0,0);
   if(yardDiagTimer){clearInterval(yardDiagTimer);yardDiagTimer=null}
  }
@@ -152,6 +200,57 @@ function syncBuildFromState(resetHistory=false,{force=false}={}){
  editorScene?.setSelected(buildSelected);
  updateBuildChrome();
 }
+function isNearEmptyBlueprint(bp){
+ return !bp?.instances || bp.instances.length <= 1;
+}
+function setBuildGuide(text){
+ const el=$('#build-guide');
+ if(el&&text)el.textContent=text;
+}
+function pulsePartsPanel(){
+ const panel=$('.build-parts');
+ if(!panel)return;
+ panel.classList.remove('is-collapsed');
+ panel.classList.remove('is-pulse');
+ void panel.offsetWidth;
+ panel.classList.add('is-pulse');
+ const btn=$('#build-toggle-parts');
+ if(btn){btn.setAttribute('aria-expanded','true');btn.textContent='收起'}
+}
+function applyEngineerMechaTemplate({quiet=false}={}){
+ if(!state)return false;
+ const active=activeBlueprint();
+ const tpl=buildEngineerMechaTemplate({
+  id:active?.id||'engineer-mecha',
+  name:'工程机甲',
+ });
+ applyBuildBlueprint(tpl);
+ buildSelected=tpl.root_instance_id;
+ editorScene?.setSelected(buildSelected);
+ // 机甲主题更易读轮廓；仍可手动切回温暖
+ if(normalizeThemeId(document.body.dataset.theme)!=='mecha'){
+  applyVisualTheme('mecha');
+ }
+ editorScene?.frameAll?.({snap:true});
+ setBuildGuide('工程机甲已装好：头罩、装甲、腿架与肩枪。保存后进试验场。');
+ if(!quiet)toast('已装工程机甲：看头罩青绿、肩甲、腿架与金色步枪；点「整机」看全貌');
+ return true;
+}
+function applyQuadTemplate({quiet=false}={}){
+ if(!state)return false;
+ const active=activeBlueprint();
+ const tpl=buildQuadChassisArmTemplate({
+  id:active?.id||'quad-chassis-arm',
+  name:active?.name||'四轮机架与两关节臂',
+ });
+ applyBuildBlueprint(tpl);
+ buildSelected=tpl.root_instance_id;
+ editorScene?.setSelected(buildSelected);
+ editorScene?.frameAll?.();
+ setBuildGuide('四轮模板已装好。点「保存」，再点「进试验场」就能开。');
+ if(!quiet)toast('已装上四轮+机械臂，记得保存后再试跑');
+ return true;
+}
 function updateBuildChrome(){
  $$('.build-part-btn').forEach(b=>b.classList.toggle('active',b.dataset.buildPart===pendingBuildPart));
  const undo=$('#build-undo'),redo=$('#build-redo');
@@ -169,16 +268,49 @@ function updateBuildChrome(){
    instanceCount:(buildBp?.instances||[]).length,
   });
  }
+ const empty=isNearEmptyBlueprint(buildBp);
+ const cta=$('#build-empty-cta');
+ if(cta)cta.hidden=!empty;
+ const hint=$('#build-pick-hint');
+ if(hint){
+  if(pendingBuildPart){
+   const name=$('.build-part-btn.active')?.textContent?.trim()||pendingBuildPart;
+   hint.textContent=`已选「${name}」→ 点画布上的绿色连接点安装`;
+   hint.classList.add('is-ready');
+  }else if(empty){
+   hint.textContent='新手：点中间大按钮一键装模板；或点下方零件再点蓝点';
+   hint.classList.remove('is-ready');
+  }else{
+   hint.textContent='点零件 → 再点连接点继续加装；也可以随时换模板';
+   hint.classList.remove('is-ready');
+  }
+ }
+ if(empty)setBuildGuide('还是空机架。一键装四轮模板最快；也可以自己选零件。');
+ else if(buildDirty)setBuildGuide('有未保存改动。保存后进试验场试跑。');
+ else if(!blueprintHasTool(buildBp,state?.part_defs||[]))setBuildGuide('还缺夹爪/推板/钩子，装上才能进试验场抓东西。');
+ else setBuildGuide('可以进试验场试跑了。失败就回编辑再改。');
  renderBuildParams();
  renderBuildBindings();
  renderComponentLibrary();
+ renderHangarMetrics();
  editorScene?.setPendingPart?.(pendingBuildPart);
+}
+function renderHangarMetrics(){
+ const el=$('#hangar-metrics');
+ if(!el)return;
+ const m=hangarMetrics(buildBp,state?.part_defs||[]);
+ const zones=buildBp?groupInstancesByZone(buildBp):{};
+ const zoneLine=Object.entries(zones).filter(([,ids])=>ids.length).map(([z,ids])=>`${z}:${ids.length}`).join(' · ');
+ const view=buildBp?cockpitViewHint(buildBp):null;
+ el.innerHTML=formatHangarMetricsHtml(m)+
+  (zoneLine?`<p class="tip">区域覆盖 ${esc(zoneLine)}</p>`:'')+
+  (view?`<p class="tip${view.ok?'':' is-warn'}">${esc(view.reason)}</p>`:'');
 }
 function renderBuildBindings(){
  const panel=$('#build-bindings');
  if(!panel||!buildBp)return;
  const bindings=autoBindings(buildBp);
- const labels={lift:'抬臂',extend:'伸缩',grasp:'夹取',drive:'驾驶',turn:'转向'};
+ const labels={lift:'抬臂',extend:'伸缩',grasp:'夹取',drive:'驾驶',turn:'转向',fire:'射击',thrust:'推进',winch:'绞盘'};
  panel.innerHTML=`<div class="panel-heading"><h2>控制绑定</h2><small>选中后点动作</small></div>`+
   ACTIONS.map(action=>{
    const ids=bindings[action]||[];
@@ -259,12 +391,29 @@ function applyBuildBlueprint(next,{push=true,dirty=true}={}){
  editorScene?.setSelected(buildSelected);
  updateBuildChrome();
 }
+function expandHangarPartsLibrary(){
+ const panel=$('.build-parts');
+ const btn=$('#build-toggle-parts');
+ const narrow=typeof matchMedia==='function'&&matchMedia('(max-width:900px)').matches;
+ if(!panel)return;
+ panel.classList.toggle('is-collapsed',!!narrow);
+ if(btn){
+  btn.setAttribute('aria-expanded',narrow?'false':'true');
+  btn.textContent=narrow?'展开零件库':'收起零件库';
+ }
+}
+function refitBuildEditor(){
+ editorScene?.resize?.();
+ editorScene?.frameAll?.();
+}
 async function ensureBuildEditor({resync=false}={}){
  if(editorScene){
-  editorScene.resize();
+  expandHangarPartsLibrary();
   if(!buildBp)syncBuildFromState(false,{force:true});
   else if(resync&&!buildDirty)syncBuildFromState(false);
   else updateBuildChrome();
+  refitBuildEditor();
+  requestAnimationFrame(()=>{refitBuildEditor();setTimeout(refitBuildEditor,80)});
   return editorScene;
  }
  if(editorReady)return editorReady;
@@ -286,12 +435,29 @@ async function ensureBuildEditor({resync=false}={}){
       }catch(err){toast(err.message||'无法放置组件')}
       return;
      }
-     if(!pendingBuildPart||!buildBp){toast('先在左侧选择要安装的零件');return}
+     if(!pendingBuildPart||!buildBp){
+      pulsePartsPanel();
+      setBuildGuide('先点左侧零件（如夹爪），再点蓝色连接点。');
+      toast('先点左侧零件，再点连接点');
+      return;
+     }
      if(meta&&meta.compatible===false){toast(meta.reason||'连接点不兼容');return}
      const childPoint=CHILD_POINT[pendingBuildPart];
      if(!childPoint){toast('未知零件连接点');return}
      const fail=explainAttachFailure(buildBp,instanceId,pointId,pendingBuildPart,state?.part_defs||[]);
      if(fail){toast(fail);return}
+     const collision=editorScene?.validateAttach?.(instanceId,pointId,pendingBuildPart);
+     if(collision&&collision.ok===false){toast(collision.reason||'安装位置会碰撞');return}
+     const same=pendingAttach
+      &&pendingAttach.parentInstanceId===instanceId
+      &&pendingAttach.pointId===pointId
+      &&pendingAttach.partId===pendingBuildPart;
+     if(!same){
+      pendingAttach={parentInstanceId:instanceId,pointId,partId:pendingBuildPart};
+      setBuildGuide('预览已对齐。再点一次同一连接点确认安装。');
+      toast('预览已吸附——再点一次确认安装');
+      return;
+     }
      try{
       const next=attachPart(buildBp,{
        partId:pendingBuildPart,
@@ -299,14 +465,23 @@ async function ensureBuildEditor({resync=false}={}){
        parentPointId:pointId,
        childPointId:childPoint,
       });
+      const newId=(next.instances||[]).map(i=>i.instance_id).find(id=>!(buildBp.instances||[]).some(o=>o.instance_id===id));
       applyBuildBlueprint(next);
       pendingBuildPart=null;
+      pendingAttach=null;
       updateBuildChrome();
+      editorScene?.playInstall?.();
+      editorScene?.clearPreview?.();
+      if(newId)editorScene?.flashInstall?.(newId);
       toast('零件已挂上');
      }catch(err){toast(err.message||'无法连接')}
     },
    });
    syncBuildFromState(true,{force:true});
+   editorScene?.setTheme?.(readStoredTheme());
+   expandHangarPartsLibrary();
+   refitBuildEditor();
+   requestAnimationFrame(()=>{refitBuildEditor();setTimeout(refitBuildEditor,80)});
   }catch(error){
    console.error(error);
    toast('建造场景未能启动');
@@ -318,10 +493,23 @@ async function ensureBuildEditor({resync=false}={}){
 }
 async function saveBuildBlueprint({quiet=false}={}){
  if(!buildBp){toast('没有可保存的蓝图');return false}
+ const payload=structuredClone(buildBp);
  buildSaving=true;buildSaveFailed=false;updateBuildChrome();
- const data=await act('blueprint_replace',{blueprint:buildBp},quiet);
+ // 保存期间若 applyBuildBlueprint 把 dirty 重新置 true，响应不得覆盖草稿
+ buildDirty=false;
+ const data=await act('blueprint_replace',{blueprint:payload},quiet);
  buildSaving=false;
- if(!data){buildSaveFailed=true;updateBuildChrome();return false}
+ if(!data){
+  buildDirty=true;
+  buildSaveFailed=true;
+  updateBuildChrome();
+  return false;
+ }
+ if(!shouldApplySaveResponse({dirtyDuringSave:buildDirty})){
+  updateBuildChrome();
+  if(!quiet)toast('蓝图已保存；本地还有更新的未保存修改');
+  return true;
+ }
  buildDirty=false;
  window.__gamePartDefs=state.part_defs||[];
  syncBuildFromState(false,{force:true});
@@ -336,7 +524,8 @@ $('#build-part-palette')?.addEventListener('click',e=>{
  if(!buildSelected)buildSelected=buildBp?.root_instance_id||null;
  editorScene?.setSelected(buildSelected);
  updateBuildChrome();
- toast(`已选 ${btn.textContent.trim()}：绿色点可装，灰色点会说明原因`);
+ setBuildGuide(`已选「${btn.textContent.trim()}」——点画布上的绿色连接点装上。`);
+ toast(`已选 ${btn.textContent.trim()}：去点绿色连接点`);
 });
 $('#build-undo')?.addEventListener('click',()=>{
  const prev=buildHistory.undo();
@@ -348,19 +537,27 @@ $('#build-redo')?.addEventListener('click',()=>{
  if(!next){toast('没有可重做的步骤');return}
  applyBuildBlueprint(next,{push:false});
 });
-$('#build-apply-quad')?.addEventListener('click',()=>{
- if(!state)return;
- const active=activeBlueprint();
- const tpl=buildQuadChassisArmTemplate({
-  id:active?.id||'quad-chassis-arm',
-  name:active?.name||'四轮机架与两关节臂',
- });
- applyBuildBlueprint(tpl);
- toast('已应用教学模板（可继续拆改，记得保存）');
+function wireApplyMecha(){
+ applyEngineerMechaTemplate();
+}
+function wireApplyQuad(){
+ applyQuadTemplate();
+}
+$('#build-apply-mecha')?.addEventListener('click',wireApplyMecha);
+$('#build-apply-quad')?.addEventListener('click',wireApplyQuad);
+$('#build-quick-start')?.addEventListener('click',()=>{
+ applyEngineerMechaTemplate();
+});
+$('#build-empty-pick')?.addEventListener('click',()=>{
+ const cta=$('#build-empty-cta');
+ if(cta)cta.hidden=true;
+ pulsePartsPanel();
+ setBuildGuide('点左侧零件，再点蓝点安装。');
+ toast('从左侧选一个零件开始');
 });
 $('#build-new-empty')?.addEventListener('click',()=>{
  if(!state)return;
- showModal(`<span class="eyebrow">NEW CHASSIS</span><h2>新建空机架？</h2><p>将用仅含核心的空白作品替换当前编辑草稿（可撤销）。四轮教学模板仍可随时应用。</p><div class="dialog-actions"><button class="dark" id="cancel-empty">取消</button><button class="primary" id="confirm-empty">新建空机架</button></div>`);
+ showModal(`<span class="eyebrow">NEW CHASSIS</span><h2>新建空机架？</h2><p>将用仅含核心的空白作品替换当前编辑草稿（可撤销）。也可以随时一键装回四轮模板。</p><div class="dialog-actions"><button class="dark" id="cancel-empty">取消</button><button class="primary" id="confirm-empty">新建空机架</button></div>`);
  $('#cancel-empty').onclick=()=>modal.close();
  $('#confirm-empty').onclick=()=>{
   modal.close();
@@ -372,7 +569,8 @@ $('#build-new-empty')?.addEventListener('click',()=>{
   applyBuildBlueprint(tpl);
   buildSelected=tpl.root_instance_id;
   editorScene?.setSelected(buildSelected);
-  toast('已从空机架开始，自由搭配零件');
+  setBuildGuide('空机架已就绪。点「一键装上四轮机架」最快。');
+  toast('已从空机架开始');
  };
 });
 $('#build-detach')?.addEventListener('click',()=>{
@@ -417,6 +615,95 @@ $('#build-toggle-parts')?.addEventListener('click',()=>{
  if(btn)btn.setAttribute('aria-expanded',collapsed?'false':'true');
  if(btn)btn.textContent=collapsed?'展开零件库':'收起零件库';
 });
+$('#build-cam-frame')?.addEventListener('click',()=>editorScene?.frameAll?.());
+$('#build-cam-front')?.addEventListener('click',()=>editorScene?.setStandardView?.('front'));
+$('#build-cam-side')?.addEventListener('click',()=>editorScene?.setStandardView?.('side'));
+$('#build-cam-top')?.addEventListener('click',()=>editorScene?.setStandardView?.('top'));
+$('#build-cam-bottom')?.addEventListener('click',()=>editorScene?.viewBottom?.());
+$('#build-cam-focus')?.addEventListener('click',()=>editorScene?.focusSelection?.());
+$('#build-reduce-motion')?.addEventListener('change',e=>editorScene?.setReduceMotion?.(e.target.checked));
+$('#build-mute-sfx')?.addEventListener('change',e=>{
+ editorScene?.setMuted?.(e.target.checked);
+ yardScene?.setMuted?.(e.target.checked);
+ const y=$('#yard-mute-sfx');if(y)y.checked=e.target.checked;
+});
+function syncYardCamButtons(mode){
+ $$('#yard .build-cam-bar .cam-btn').forEach(btn=>{
+  const id=btn.id||'';
+  const map={
+   'yard-cam-cockpit':'cockpit',
+   'yard-cam-follow':'follow',
+   'yard-cam-orbit':'orbit',
+   'yard-cam-tool':'tool',
+   'yard-cam-frame':'orbit',
+  };
+  btn.classList.toggle('is-active',map[id]===mode);
+ });
+}
+$('#yard-cam-cockpit')?.addEventListener('click',()=>{
+ yardScene?.enterCockpit?.();
+ syncYardCamButtons('cockpit');
+ toast('驾驶舱第一人称');
+});
+$('#yard-cam-follow')?.addEventListener('click',()=>{
+ yardScene?.resumeFollow?.();
+ syncYardCamButtons('follow');
+});
+$('#yard-cam-orbit')?.addEventListener('click',()=>{
+ yardScene?.setCameraMode?.('orbit');
+ syncYardCamButtons('orbit');
+});
+$('#yard-cam-tool')?.addEventListener('click',()=>{
+ yardScene?.focusTool?.();
+ syncYardCamButtons('tool');
+});
+$('#yard-cam-frame')?.addEventListener('click',()=>{
+ yardScene?.frameCameraToBounds?.();
+ syncYardCamButtons('orbit');
+});
+$('#yard-reduce-motion')?.addEventListener('change',e=>yardScene?.setReduceMotion?.(e.target.checked));
+$('#yard-mute-sfx')?.addEventListener('change',e=>{
+ yardScene?.setMuted?.(e.target.checked);
+ editorScene?.setMuted?.(e.target.checked);
+ const b=$('#build-mute-sfx');if(b)b.checked=e.target.checked;
+});
+$('#yard-quality-low')?.addEventListener('change',e=>{
+ yardScene?.setQuality?.(e.target.checked?'low':'high');
+ editorScene?.setQuality?.(e.target.checked?'low':'high');
+});
+$('#yard-debug')?.addEventListener('change',e=>{
+ yardScene?.setDebug?.(e.target.checked);
+});
+document.addEventListener('click',e=>{
+ const btn=e.target.closest?.('.theme-btn[data-theme]');
+ if(!btn)return;
+ applyVisualTheme(btn.dataset.theme);
+ toast(`已切换视觉主题：${btn.textContent.trim()}`);
+});
+applyVisualTheme(readStoredTheme(),{persist:false});
+$('#yard-contrast')?.addEventListener('click',async()=>{
+ try{
+  const [{compareStructures},{shortArmBlueprint,longArmBlueprint,contrastPartDefs}]=await Promise.all([
+   import('/game-assets/simulation/structureContrast.mjs'),
+   import('/game-assets/editor/contrastBlueprints.mjs'),
+  ]);
+  const live=state?.part_defs||[];
+  const defs=live.length?live:contrastPartDefs();
+  const report=compareStructures(shortArmBlueprint(),longArmBlueprint(),defs,{
+   targetDist:0.18,
+   heldMass:0.6,
+  });
+  const hint=$('#yard-structure-hint');
+  if(hint){
+   hint.hidden=false;
+   hint.textContent=report.summary;
+  }
+  toast(report.summary);
+ }catch(err){
+  console.error(err);
+  toast(err.message||'结构对比失败');
+ }
+});
 
 function offerUpright(reason){
  showModal(`<span class="eyebrow">TIPPED OVER</span><h2>倾覆了</h2><p>${esc(reason||'重心超出支撑面')}</p><div class="dialog-actions"><button class="dark" id="tip-dismiss">知道了</button><button class="primary" id="tip-upright">扶正</button></div>`);
@@ -445,7 +732,11 @@ async function ensureYardScene(){
     onChallengeReady:(payload)=>submitYardChallenge(payload),
    });
    yardScene.setBlueprint(activeBlueprint(),state?.part_defs||[]);
+   yardScene.setTheme?.(readStoredTheme());
+   if($('#yard-quality-low')?.checked)yardScene.setQuality?.('low');
    yardScene.reset();
+   yardScene.resumeFollow?.();
+   syncYardCamButtons('follow');
    syncYardChallengeUi();
    startYardDiagnostics();
   }catch(error){
@@ -460,15 +751,33 @@ async function ensureYardScene(){
 
 function startYardDiagnostics(){
  if(yardDiagTimer)clearInterval(yardDiagTimer);
+ const refreshYardStatus=()=>{
+  const bp=activeBlueprint();
+  const el=$('#yard-status');
+  if(el&&bp){
+   el.textContent=`试跑 · ${bp.name||'未命名'} · ${(bp.instances||[]).length} 零件 · rev ${bp.revision??state?.revision??'—'}`;
+  }
+ };
+ refreshYardStatus();
  yardDiagTimer=setInterval(()=>{
   if(view!=='yard'||!yardScene)return;
+  refreshYardStatus();
   const d=yardScene.diagnostics?.();
   const el=$('#yard-diagnostics');
   if(!el||!d)return;
   const issues=(d.controls?.issues||[]).map(i=>i.message).slice(0,2);
+  const gy=typeof d.groundY==='number'?` · 离地 ${d.groundY.toFixed(2)}m`:'';
   el.textContent=`质量 ${d.mass.toFixed(2)}kg · 轮距宽 ${d.width.toFixed(2)}m · 可达 ${d.reach.toFixed(2)}m · 夹爪${d.gripperOpen>0.4?'张开':'闭合'}`+
+   gy+
+   (d.graspPhase&&d.graspPhase!=='idle'?` · 抓取:${d.graspPhase}`:'')+
+   (d.fps?` · ${Math.round(d.fps)}fps`:'')+
    (d.tipRisk?' · ⚠接近倾覆':'')+
    (issues.length?` · ${issues.join('；')}`:'');
+  const hint=$('#yard-structure-hint');
+  if(hint&&d.structureHint){
+   hint.hidden=false;
+   hint.textContent=d.structureHint;
+  }
  },400);
 }
 
@@ -552,6 +861,7 @@ $('#yard-exit')?.addEventListener('click',async()=>{
  syncBuildFromState(true,{force:true});
  await navigate('build');
 });
+$('#yard-challenge-shelf')?.addEventListener('click',()=>startYardChallenge('bookshelf-rescue'));
 $('#yard-challenge')?.addEventListener('click',()=>startYardChallenge('drawer-block'));
 $('#yard-challenge-gap')?.addEventListener('click',()=>startYardChallenge('desk-gap-rescue'));
 $('#yard-submit-challenge')?.addEventListener('click',()=>submitYardChallenge());
@@ -562,11 +872,30 @@ function syncYardDriveInput(){
  if(yardKeys.joint)yardScene.setJointDelta(yardKeys.joint*0.04);
  if(yardKeys.extend)yardScene.setExtendDelta?.(yardKeys.extend*0.008);
  if(yardKeys.grasp){yardScene.setGraspDelta?.(yardKeys.grasp);yardKeys.grasp=0}
+ yardScene.setExtrasInput?.({fire:yardKeys.fire,thrust:yardKeys.thrust,winch:yardKeys.winch});
+ if(yardKeys.fire)yardKeys.fire=0;
+ if(yardKeys.winch)yardKeys.winch=0;
+ syncYardCombatHud();
+}
+function syncYardCombatHud(){
+ const el=$('#cockpit-hud');
+ if(!el||!yardScene?.hudState)return;
+ const h=yardScene.hudState();
+ const bits=[`HP ${h.hp}/${h.maxHp}`];
+ if(h.hasWeapon)bits.push(`弹药 ${h.ammo}` ,`热量 ${Math.round(h.heat)}`);
+ if(h.hasThrust)bits.push(`燃料 ${h.fuel?.toFixed?.(2)??h.fuel}`);
+ if(h.hasWinch)bits.push(h.winch?'绞盘中':'绞盘就绪');
+ el.textContent=bits.join(' · ');
 }
 
 document.addEventListener('keydown',e=>{
  if(modal.open||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||e.altKey||e.ctrlKey||e.metaKey)return;
  if(view==='yard'){
+  if(e.code==='KeyR'){
+   e.preventDefault();
+   if(!e.repeat){const r=yardScene?.tryInteract();if(r?.reason)toast(r.reason)}
+   return;
+  }
   const driveMap={
    KeyW:['forward',1],ArrowUp:['forward',1],
    KeyS:['forward',-1],ArrowDown:['forward',-1],
@@ -575,11 +904,17 @@ document.addEventListener('keydown',e=>{
    KeyQ:['joint',1],KeyE:['joint',-1],
    KeyZ:['extend',1],KeyC:['extend',-1],
    KeyF:['grasp',-1],
+   KeyT:['fire',1],
+   KeyG:['winch',1],
   };
   const bind=driveMap[e.code];
   if(bind){e.preventDefault();yardKeys[bind[0]]=bind[1];syncYardDriveInput();return}
-  if(e.code==='Space'){e.preventDefault();const r=yardScene?.tryInteract();if(r?.reason)toast(r.reason);return}
-  if(e.code==='KeyR'){e.preventDefault();yardScene?.reset();act('yard_reset',{},true);toast('已回到起点');return}
+  if(e.code==='Space'){
+   e.preventDefault();
+   if(yardScene?.hudState?.()?.hasThrust){yardKeys.thrust=1;syncYardDriveInput();return}
+   const r=yardScene?.tryInteract();if(r?.reason)toast(r.reason);return;
+  }
+  if(e.code==='KeyX'){e.preventDefault();yardScene?.reset();act('yard_reset',{},true);toast('已回到起点');return}
   return;
  }
  if(view!=='play'||navigating)return;
@@ -589,6 +924,7 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>{
  if(view!=='yard')return;
+ if(e.code==='Space'){yardKeys.thrust=0;syncYardDriveInput();return}
  const driveMap={
   KeyW:['forward',1],ArrowUp:['forward',1],
   KeyS:['forward',-1],ArrowDown:['forward',-1],

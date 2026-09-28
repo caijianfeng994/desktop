@@ -1,13 +1,12 @@
 /**
  * 试验场静态世界：围墙、窄门、坡道、练习方块、抽屉缝与接收区。
  * 窄门净宽约 0.25m：窄底盘可通过，宽底盘由 stepDrive 的 width 半宽夹墙挡住。
- *
- * 注意：`ramp` 本轮仅为视觉占位盒体，不参与 tipFactor / 高度场；
- * 倾覆判定仍按平地支撑半宽，勿把坡道几何当成已接通的坡面物理。
+ * `ramp` 与 terrain.heightAt / tipFactorAt 共用同一 AABB（低端 minZ → 高端 maxZ）。
  */
 
 export const DRAWER_BLOCK_ID = 'drawer-cube';
 export const DESK_GAP_BLOCK_ID = 'rescue-cube';
+export const BOOKSHELF_BLOCK_ID = 'bookshelf-rescue-cube';
 
 const DOOR_WIDTH = 0.25;
 const DOOR_Z = 1.15;
@@ -38,6 +37,28 @@ export const RECEIVE_ZONE = {
 export const NEAR_DESK = {minX: -0.7, maxX: 0.7, minZ: -1.7, maxZ: -0.55, y: 0};
 export const FAR_DESK = {minX: -0.55, maxX: 0.55, minZ: 0.55, maxZ: 1.55, y: 0.12};
 export const DESK_GAP = {minX: -0.8, maxX: 0.8, minZ: -0.5, maxZ: 0.5};
+
+/** 倾斜书架救援：救援方块在上层书架，地面有巡逻与掩体 */
+export const BOOKSHELF = {
+  minX: 0.7,
+  maxX: 1.55,
+  minZ: 0.4,
+  maxZ: 1.5,
+  baseY: 0,
+  shelfY: 0.55,
+  tilt: 0.18,
+};
+export const BOOKSHELF_COVER = {minX: -0.35, maxX: 0.15, minZ: 0.1, maxZ: 0.45, h: 0.28};
+export const BOOKSHELF_ANCHORS = [
+  {id: 'anchor-shelf', x: 1.1, y: 0.6, z: 1.05, radius: 0.22},
+  {id: 'anchor-cover', x: -0.1, y: 0.35, z: 0.28, radius: 0.2},
+];
+export const BOOKSHELF_ENEMY_PATH = [
+  {x: -1.2, z: 0.6},
+  {x: -0.4, z: 1.1},
+  {x: 0.3, z: 0.7},
+  {x: -0.4, z: 0.2},
+];
 
 function cloneBlock(b) {
   return {
@@ -119,9 +140,9 @@ export function createYardWorld() {
   const practiceBlocks = [
     {
       id: 'practice-block',
-      x: -0.35,
+      x: 0.05,
       y: 0.04,
-      z: 0.35,
+      z: -0.55,
       size: [0.08, 0.08, 0.08],
       mass: 0.35,
     },
@@ -149,8 +170,19 @@ export function createYardWorld() {
     },
   ];
 
+  const bookshelfBlocks = [
+    {
+      id: BOOKSHELF_BLOCK_ID,
+      x: (BOOKSHELF.minX + BOOKSHELF.maxX) / 2,
+      y: BOOKSHELF.shelfY + 0.04,
+      z: (BOOKSHELF.minZ + BOOKSHELF.maxZ) / 2 - 0.1,
+      size: [0.07, 0.07, 0.07],
+      mass: 0.3,
+    },
+  ];
+
   let challengeMode = false;
-  /** @type {'none'|'drawer-block'|'desk-gap-rescue'} */
+  /** @type {'none'|'drawer-block'|'desk-gap-rescue'|'bookshelf-rescue'} */
   let challengeKind = 'none';
   const blocks = practiceBlocks.map(cloneBlock);
   const spawn = {x: 0, z: -1.35, yaw: 0};
@@ -158,6 +190,7 @@ export function createYardWorld() {
   function reloadBlocks() {
     let source = practiceBlocks;
     if (challengeMode && challengeKind === 'desk-gap-rescue') source = deskGapBlocks;
+    else if (challengeMode && challengeKind === 'bookshelf-rescue') source = bookshelfBlocks;
     else if (challengeMode) source = challengeBlocks;
     blocks.length = 0;
     for (const b of source) blocks.push(cloneBlock(b));
@@ -200,6 +233,10 @@ export function createYardWorld() {
     nearDesk: {...NEAR_DESK},
     farDesk: {...FAR_DESK},
     deskGap: {...DESK_GAP},
+    bookshelf: {...BOOKSHELF},
+    bookshelfCover: {...BOOKSHELF_COVER},
+    anchors: BOOKSHELF_ANCHORS.map((a) => ({...a})),
+    enemyPath: BOOKSHELF_ENEMY_PATH.map((p) => ({...p})),
     blocks,
     spawn,
     get challengeMode() {

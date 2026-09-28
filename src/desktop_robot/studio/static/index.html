@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>桌面机器人装配台</title>
   <script type="importmap">
-    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+    {"imports":{"three":"/vendor/three/three.module.js","three/addons/controls/OrbitControls.js":"/vendor/three/controls/OrbitControls.js"}}
   </script>
   <style>
     :root { --bg:#0b1118; --panel:#121b25; --panel2:#182431; --line:#2a3948; --text:#ecf3f8; --muted:#8da0b1; --blue:#49a5ff; --green:#41d39b; --yellow:#f3b94f; --red:#ff7474; --shadow:0 18px 46px rgba(0,0,0,.26); }
@@ -15,7 +15,7 @@
     button { cursor:pointer; }
     .topbar { height:64px; display:flex; align-items:center; gap:18px; padding:0 22px; border-bottom:1px solid var(--line); background:rgba(13,20,28,.9); backdrop-filter:blur(16px); position:sticky; top:0; z-index:40; }
     .topbar[hidden] { display:none; }
-    .brand { font-weight:800; letter-spacing:-.02em; white-space:nowrap; }
+    .brand { font-weight:800; letter-spacing:-.02em; white-space:nowrap; color:inherit; text-decoration:none; }
     .brand small { display:block; color:var(--muted); font-weight:500; font-size:10px; letter-spacing:.08em; }
     .steps { display:flex; align-items:center; gap:5px; margin:auto; }
     .step-tab { color:var(--muted); border:0; background:transparent; padding:8px 9px; border-radius:8px; font-size:12px; }
@@ -151,7 +151,7 @@
     #err { color:var(--red); min-height:22px; font-size:12px; margin-top:8px; }
     .track-picker { max-width:900px; margin:56px auto; padding:0 18px; }
     .track-picker p { color:var(--muted); line-height:1.65; }
-    .track-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:28px; }
+    .track-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:28px; }
     .track-card { display:grid; gap:8px; text-align:left; text-decoration:none; color:inherit; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:var(--shadow); }
     .track-card:hover,.track-card:focus-visible { border-color:var(--blue); outline:none; }
     .track-card strong { font-size:17px; }
@@ -159,27 +159,34 @@
     @media(max-width:1050px){ .assembly-grid{grid-template-columns:220px 1fr}.inspect-pane{display:none}.skill-grid{grid-template-columns:repeat(2,1fr)} }
     @media(max-width:720px){ .steps{display:none}.topbar{padding:0 12px}.page{padding:12px}.two-col,.board-grid,.summary-grid,.wiring-layout,.track-grid{grid-template-columns:1fr}.assembly-grid{display:block;height:auto}.parts-pane{border:0}.part-list{grid-template-columns:1fr 1fr}.workarea{height:600px}.skill-grid{grid-template-columns:1fr}.section-heading h1{font-size:25px}.topbar .ghost{display:none} }
   </style>
+  <link rel="stylesheet" href="/game-assets/legacy.css">
 </head>
 <body>
+  <a class="workshop-return" href="/game#collection">← 返回小小工坊</a>
   <header class="topbar" id="studio-topbar">
-    <div class="brand">桌面机器人装配台<small>HARDWARE · WIRING · SKILLS</small></div>
+    <a class="brand" href="/" title="返回首页">桌面机器人装配台<small>HARDWARE · WIRING · SKILLS</small></a>
     <nav class="steps" id="steps"></nav>
-    <a class="ghost" id="design-link" href="/design.html">工程与制造</a>
+    <a class="ghost" id="design-link" href="/design.html">结构设计</a>
+    <a class="ghost" id="assembly-3d-link" href="/assembly-3d.html">3D 装配</a>
     <button class="ghost" id="save-draft" type="button">保存草稿</button>
   </header>
   <section class="track-picker" id="track-picker" hidden>
     <div>
       <h1>选择创作路线</h1>
-      <p>两条路线共用同一份机器人装配数据，可以随时切换。</p>
+      <p>三个入口共用同一份机器人装配数据，可以随时切换。</p>
     </div>
     <div class="track-grid">
       <button class="track-card" id="track-studio" type="button">
         <strong>形象与互动</strong>
         <span>外形、接线、技能、生成与对话</span>
       </button>
-      <a class="track-card" href="/design.html">
-        <strong>工程与制造</strong>
-        <span>实际尺寸、三维位姿、关节与 URDF</span>
+      <a class="track-card" id="track-design" href="/design.html">
+        <strong>机器人结构设计</strong>
+        <span>填写真实尺寸和关节，导出机器人结构文件</span>
+      </a>
+      <a class="track-card" id="track-assembly-3d" href="/assembly-3d.html">
+        <strong>3D 装配</strong>
+        <span>按真实毫米坐标查看零件三维摆放与缺失项</span>
       </a>
     </div>
   </section>
@@ -351,21 +358,39 @@
     function renderSummary(){const b=boardById(),v=state.validation;$("#final-summary").innerHTML=`<div class="summary-block"><h3>机器人</h3><strong>${esc($("#name").value||'未命名')}</strong><p class="muted">${esc(b?.name)} · ${state.mounted.length} 个配件 · ${state.selectedSkillIds.size} 个技能</p></div><div class="summary-block"><h3>硬件能力</h3><div class="chips">${(v?.capabilities||[]).map(x=>`<span class="chip">${esc(x)}</span>`).join('')}</div></div><div class="summary-block"><h3>接线</h3><p class="muted">${state.connections.length} 条连接 · ${v?.totals?.power_w||0}W · ¥${v?.totals?.price_cny||0}</p></div><div class="summary-block"><h3>技能</h3><div class="chips">${[...state.selectedSkillIds].map(id=>`<span class="chip">${esc(state.skills.find(s=>s.id===id)?.name||id)}</span>`).join('')}</div></div>`}
     function fileToB64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file)})}
     $("#avatar").addEventListener("change",async e=>{const f=e.target.files[0];if(!f)return;if(f.size>5*1024*1024){alert("图片不能超过 5MB");return}state.avatarB64=await fileToB64(f);$("#avatar-preview").src=URL.createObjectURL(f);$("#avatar-preview").hidden=false;$("#avatar-label").hidden=true});
-    function syncDesignLink(){$("#design-link").href=state.draftId?`/design.html?draft=${encodeURIComponent(state.draftId)}`:"/design.html"}
-    $("#save-draft").addEventListener("click",async()=>{const payload={draft_id:state.draftId,assembly:assembly(),name:$("#name").value,call_me:$("#call-me").value,prefer_extra:$("#extra").value,skill_ids:[...state.selectedSkillIds]};const d=await fetch("/api/assembly/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());if(d.ok){state.draftId=d.draft_id;history.replaceState(null,"",`/?draft=${d.draft_id}`);syncDesignLink();$("#save-draft").textContent="已保存";setTimeout(()=>$("#save-draft").textContent="保存草稿",1200)}});
-    async function loadDraft(){const id=new URLSearchParams(location.search).get("draft");if(!id)return;const d=await fetch(`/api/assembly/draft/${encodeURIComponent(id)}`).then(r=>r.json());if(!d.ok)return;const x=d.data,a=x.assembly;state.draftId=id;state.boardId=a.board_id;state.mounted=a.components||[];state.customBoards=a.custom_boards||[];state.customComponents=a.custom_components||[];state.powerOverride=Boolean(a.allow_power_override);state.selectedSkillIds=new Set(x.skill_ids||[]);$("#name").value=x.name||'';$("#call-me").value=x.call_me||'';$("#extra").value=x.prefer_extra||'';syncDesignLink();renderBoards();renderParts();await validateAssembly()}
+    function syncTrackLinks(){
+      const robotId=new URLSearchParams(location.search).get("robot");
+      if(robotId){
+        const robotQuery=`?robot=${encodeURIComponent(robotId)}`;
+        $("#design-link").href=`/design.html${robotQuery}`;
+        $("#assembly-3d-link").href=`/assembly-3d.html${robotQuery}`;
+        $("#track-design").href=`/design.html${robotQuery}`;
+        $("#track-assembly-3d").href=`/assembly-3d.html${robotQuery}`;
+        return;
+      }
+      const draftQuery=state.draftId?`?draft=${encodeURIComponent(state.draftId)}`:"";
+      $("#design-link").href=state.draftId?`/design.html?draft=${encodeURIComponent(state.draftId)}`:"/design.html";
+      $("#assembly-3d-link").href=`/assembly-3d.html${draftQuery}`;
+      $("#track-design").href=`/design.html${draftQuery}`;
+      $("#track-assembly-3d").href=`/assembly-3d.html${draftQuery}`;
+    }
+    $("#save-draft").addEventListener("click",async()=>{const payload={draft_id:state.draftId,assembly:assembly(),name:$("#name").value,call_me:$("#call-me").value,prefer_extra:$("#extra").value,skill_ids:[...state.selectedSkillIds]};const d=await fetch("/api/assembly/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());if(d.ok){state.draftId=d.draft_id;history.replaceState(null,"",`/?draft=${d.draft_id}`);syncTrackLinks();$("#save-draft").textContent="已保存";setTimeout(()=>$("#save-draft").textContent="保存草稿",1200)}});
+    async function loadDraft(){const id=new URLSearchParams(location.search).get("draft");if(!id){syncTrackLinks();return}const d=await fetch(`/api/assembly/draft/${encodeURIComponent(id)}`).then(r=>r.json());if(!d.ok)return;const x=d.data,a=x.assembly;state.draftId=id;state.boardId=a.board_id;state.mounted=a.components||[];state.customBoards=a.custom_boards||[];state.customComponents=a.custom_components||[];state.powerOverride=Boolean(a.allow_power_override);state.selectedSkillIds=new Set(x.skill_ids||[]);$("#name").value=x.name||'';$("#call-me").value=x.call_me||'';$("#extra").value=x.prefer_extra||'';syncTrackLinks();renderBoards();renderParts();await validateAssembly()}
     $("#go").addEventListener("click",async()=>{const err=$("#err");err.textContent="";if(!$("#name").value.trim()){err.textContent="请填写机器人名字";return}if(!state.validation?.valid){err.textContent="硬件装配未通过校验";return}if(!state.selectedSkillIds.has("chat.base")){err.textContent="至少安装基础对话才能开始聊天";return}const btn=$("#go");btn.disabled=true;btn.textContent=state.avatarB64?"正在生成 3D 与机器人…":"正在生成机器人…";try{const d=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:$("#name").value.trim(),call_me:$("#call-me").value.trim()||null,prefer_extra:$("#extra").value.trim()||null,route:"custom",skill_ids:[...state.selectedSkillIds],assembly:assembly(),avatar_image_b64:state.avatarB64})}).then(r=>r.json());if(!d.ok){err.textContent=d.reason||"生成失败";return}location.href=d.robot_url}catch(e){err.textContent="网络错误或生成超时"}finally{btn.disabled=false;btn.textContent="生成机器人"}});
 
     $$('[data-dialog-cancel]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close('cancel')));
     $("#new-board").addEventListener("click",()=>$("#board-dialog").showModal());$("#board-dialog").addEventListener("close",()=>{if($("#board-dialog").returnValue!=="save")return;const f=new FormData($("#board-form")),id=`custom.${Date.now()}`;const b={id,name:f.get("name"),summary:"用户自定义主控板",architecture:"custom",brain_mode:f.get("brain"),price_cny:+f.get("price"),base_power_w:2,power_limit_w:+f.get("power"),ports:{usb:+f.get("usb"),gpio:+f.get("gpio"),pwm:4,spi:1,i2c:1,csi:0},capabilities:f.get("brain")==='local'?["linux","local_brain"]:["external_brain"],color:"#64748b"};state.customBoards.push(b);selectBoard(id)});
     $("#new-component").addEventListener("click",()=>$("#component-dialog").showModal());$("#component-dialog").addEventListener("close",()=>{if($("#component-dialog").returnValue!=="save")return;const f=new FormData($("#component-form")),id=`custom.${Date.now()}`,port=f.get("port"),category=f.get("category"),provides=String(f.get("provides")||'').split(',').map(x=>x.trim()).filter(Boolean);if(category==='power'&&!provides.includes('power.supply'))provides.push('power.supply');state.customComponents.push({id,name:f.get("name"),category,price_cny:+f.get("price"),power_w:+f.get("power"),requires_ports:port==='none'?{}:{[port]:1},provides,compatible_slots:category==='power'?['body.power']:[],requires_board_capabilities:[],power_output_w:+f.get("power_output"),color:"#64748b"});renderParts()});
     const routeParams = new URLSearchParams(location.search);
-    const showTrackPicker = !routeParams.has("track") && !routeParams.has("draft");
+    const showTrackPicker = routeParams.has("home") || (!routeParams.has("track") && !routeParams.has("draft"));
     $("#track-picker").hidden = !showTrackPicker;
     $("#studio-topbar").hidden = showTrackPicker;
     document.querySelector("main.page").hidden = showTrackPicker;
     $("#track-studio").addEventListener("click", () => {
-      history.replaceState(null, "", "/?track=studio");
+      const robotId=routeParams.get("robot");
+      if(robotId){location.href=`/robot.html?id=${encodeURIComponent(robotId)}`;return}
+      const draftQuery=state.draftId?`&draft=${encodeURIComponent(state.draftId)}`:"";
+      history.replaceState(null, "", `/?track=studio${draftQuery}`);
       $("#track-picker").hidden = true;
       $("#studio-topbar").hidden = false;
       document.querySelector("main.page").hidden = false;

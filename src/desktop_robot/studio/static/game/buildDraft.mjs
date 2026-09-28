@@ -15,6 +15,14 @@ export function shouldSyncFromServer({dirty = false, force = false} = {}) {
 }
 
 /**
+ * 保存请求飞行期间若草稿又被修改，响应不得用服务端蓝图覆盖本地草稿。
+ * @param {{dirtyDuringSave?: boolean}} opts
+ */
+export function shouldApplySaveResponse({dirtyDuringSave = false} = {}) {
+  return !dirtyDuringSave;
+}
+
+/**
  * @param {Map|object[]|null|undefined} partDefs
  * @returns {Map<string, object>}
  */

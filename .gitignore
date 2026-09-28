@@ -8,3 +8,7 @@ data/
 dist/
 build/
 .superpowers/
+.workbuddy/
+output/
+outputs/
+.playtest-tmp.mjs

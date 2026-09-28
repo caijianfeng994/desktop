@@ -4,7 +4,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-BodyAction = Literal["speak", "set_face", "look", "move"]
+BodyAction = Literal[
+    "speak",
+    "set_face",
+    "look",
+    "move",
+    "wave",
+    "nod",
+    "hop",
+    "listen",
+    "tts",
+]
 
 
 class BodyCommand(BaseModel):

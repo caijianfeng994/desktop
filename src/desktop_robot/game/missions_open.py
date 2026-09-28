@@ -4,6 +4,7 @@ from __future__ import annotations
 
 DRAWER_BLOCK_ID = "drawer-cube"
 DESK_GAP_BLOCK_ID = "rescue-cube"
+BOOKSHELF_BLOCK_ID = "bookshelf-rescue-cube"
 
 CHALLENGE = dict(
     id="drawer-block",
@@ -25,7 +26,21 @@ DESK_GAP_CHALLENGE = dict(
     block_id=DESK_GAP_BLOCK_ID,
 )
 
-OPEN_CHALLENGES = [CHALLENGE, DESK_GAP_CHALLENGE]
+BOOKSHELF_CHALLENGE = dict(
+    id="bookshelf-rescue",
+    title="书架救援",
+    subtitle="绕开或击败巡逻敌机，救回上层维修机器人",
+    description="倾斜书架上困着维修机器人。地面有巡逻敌机与掩体；可用射击清场、绞盘上锚或短时推进登高，将目标运回接收区。",
+    reward=320,
+    xp=140,
+    block_id=BOOKSHELF_BLOCK_ID,
+    loot=[
+        {"type": "part", "part_id": "thruster_pack", "qty": 1},
+        {"type": "schematic", "id": "schematic-winch", "name": "绞盘模块设计图", "unlocks": "winch_module"},
+    ],
+)
+
+OPEN_CHALLENGES = [CHALLENGE, DESK_GAP_CHALLENGE, BOOKSHELF_CHALLENGE]
 CHALLENGES_BY_ID = {c["id"]: c for c in OPEN_CHALLENGES}
 
 # 方块速度阈值（m/s）：≈静止
@@ -41,7 +56,11 @@ def evaluate_drawer_result(payload: dict | None) -> dict:
     data = payload if isinstance(payload, dict) else {}
     challenge_id = data.get("challenge_id") or data.get("mission")
     challenge = CHALLENGES_BY_ID.get(challenge_id) if challenge_id else None
-    expected_ids = {CHALLENGE["block_id"], DESK_GAP_CHALLENGE["block_id"]}
+    expected_ids = {
+        CHALLENGE["block_id"],
+        DESK_GAP_CHALLENGE["block_id"],
+        BOOKSHELF_CHALLENGE["block_id"],
+    }
     if challenge:
         expected_ids = {challenge["block_id"]}
 

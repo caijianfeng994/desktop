@@ -4,7 +4,7 @@
  * 实例 params：drive_sign(±1)、drive_scale、limit_min、limit_max
  */
 
-const ACTIONS = Object.freeze(['drive', 'turn', 'lift', 'extend', 'grasp']);
+const ACTIONS = Object.freeze(['drive', 'turn', 'lift', 'extend', 'grasp', 'fire', 'thrust', 'winch']);
 
 /**
  * @param {object|null|undefined} bp

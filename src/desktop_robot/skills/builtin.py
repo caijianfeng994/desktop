@@ -36,8 +36,14 @@ def forget_preference(ctx: SkillContext, payload: dict) -> str:
     return key
 
 
+def see_scene(ctx: SkillContext, payload: dict) -> str:
+    """假视觉：无摄像头时返回固定陪伴向描述。"""
+    return "我假装看了一眼前方：桌面还在，光线还行，主人好像也在附近。"
+
+
 BUILTIN = {
     "get_time": get_time,
     "set_preference": set_preference,
     "forget_preference": forget_preference,
+    "see": see_scene,
 }

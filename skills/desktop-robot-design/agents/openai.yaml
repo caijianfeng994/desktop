@@ -1,0 +1,4 @@
+interface:
+  display_name: "桌面机器人设计"
+  short_description: "从硬件装配生成 CAD、URDF、仿真与制造交付物"
+  default_prompt: "使用 $desktop-robot-design 将当前硬件装配整理成可审计的机器人设计和 URDF。"

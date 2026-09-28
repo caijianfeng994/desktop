@@ -7,7 +7,9 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
+
+from desktop_robot.game.engine import GameError, GameStore
 
 from desktop_robot.llm.openai_compat import load_dotenv
 from desktop_robot.hardware.catalog import SLOTS, board_to_dict, component_to_dict, get_catalog
@@ -26,6 +28,7 @@ from desktop_robot.passport.publication import (
 )
 from desktop_robot.passport.store import (
     avatar_glb_path,
+    list_assembly_drafts,
     load_assembly_draft,
     load_passport,
     passport_path,
@@ -65,6 +68,7 @@ _PUBLICATION_CLAIM_RE = re.compile(r"^/api/publications/([0-9a-fA-F-]{36})/claim
 
 
 class StudioHandler(BaseHTTPRequestHandler):
+    game: GameStore | None = None
     data_root: Path = DEFAULT_DATA_ROOT
     registry: SessionRegistry | None = None
     convert_avatar: Callable[[bytes], bytes] = staticmethod(image_bytes_to_glb)
@@ -76,10 +80,12 @@ class StudioHandler(BaseHTTPRequestHandler):
         assert self.registry is not None
         return self.registry
 
-    def _write(self, status: int, body: bytes, content_type: str) -> None:
+    def _write(self, status: int, body: bytes, content_type: str, *, cache: str | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if cache:
+            self.send_header("Cache-Control", cache)
         self.end_headers()
         self.wfile.write(body)
 
@@ -101,11 +107,35 @@ class StudioHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/api/game":
+            assert self.game is not None
+            self._json(200, {"ok": True, "state": self.game.get()})
+            return
+        if path.startswith("/game-assets/"):
+            import mimetypes
+            root = (STATIC_DIR / "game").resolve()
+            asset = (root / path.removeprefix("/game-assets/")).resolve()
+            if asset.is_relative_to(root) and asset.is_file():
+                self._write(
+                    200,
+                    asset.read_bytes(),
+                    mimetypes.guess_type(asset.name)[0] or "application/octet-stream",
+                    cache="no-cache",
+                )
+            else:
+                self._json(404, {"ok": False, "reason": "静态资源不存在"})
+            return
+        if path in ("/game", "/game.html") or (path in ("/", "/index.html") and not any(k in parse_qs(parsed.query) for k in ("track", "draft", "home", "robot"))):
+            self._write(200, (STATIC_DIR / "game.html").read_bytes(), "text/html; charset=utf-8", cache="no-cache")
+            return
         if path in ("/", "/index.html"):
             self._write(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
             return
         if path in ("/design.html", "/design"):
             self._write(200, (STATIC_DIR / "design.html").read_bytes(), "text/html; charset=utf-8")
+            return
+        if path in ("/assembly-3d.html", "/assembly-3d"):
+            self._write(200, (STATIC_DIR / "assembly-3d.html").read_bytes(), "text/html; charset=utf-8")
             return
         if path in ("/robot.html", "/robot"):
             self._write(200, (STATIC_DIR / "robot.html").read_bytes(), "text/html; charset=utf-8")
@@ -121,6 +151,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             if png.is_file():
                 self._write(200, png.read_bytes(), "image/png")
                 return
+        if path.startswith("/vendor/") and path.endswith(".js"):
+            asset = (STATIC_DIR / path.lstrip("/")).resolve()
+            if asset.is_file() and asset.is_relative_to(STATIC_DIR / "vendor"):
+                self._write(200, asset.read_bytes(), "text/javascript; charset=utf-8")
+                return
+            self._json(404, {"ok": False, "reason": "静态资源不存在"})
+            return
         if path in ("/robot-avatar-3d.png", "/robot-avatar-depth.png"):
             png = STATIC_DIR / path.lstrip("/")
             if png.is_file():
@@ -181,6 +218,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             self._json(200, {"ok": True, "publication": item.model_dump()})
             return
+        if path == "/api/assembly/drafts":
+            self._json(200, {"ok": True, "drafts": list_assembly_drafts(self.data_root)})
+            return
         draft = _ASSEMBLY_DRAFT_RE.match(path)
         if draft:
             try:
@@ -207,6 +247,18 @@ class StudioHandler(BaseHTTPRequestHandler):
         payload = self._read_json()
         if payload is None:
             self._json(400, {"ok": False, "reason": "invalid_json"})
+            return
+
+        if path == "/api/game/action":
+            assert self.game is not None
+            try:
+                state, message = self.game.act(payload)
+            except GameError as exc:
+                self._json(400, {"ok": False, "reason": str(exc), "state": self.game.get()})
+                return
+            if payload.get("action") == "rename":
+                self._drop_session(state["robot_id"])
+            self._json(200, {"ok": True, "state": state, "message": message})
             return
 
         if path == "/api/generate":
@@ -606,6 +658,6 @@ def make_server(host: str, port: int, data_root: Path) -> ThreadingHTTPServer:
     handler = type(
         "BoundStudioHandler",
         (StudioHandler,),
-        {"data_root": data_root, "registry": registry},
+        {"data_root": data_root, "registry": registry, "game": GameStore(data_root)},
     )
     return ThreadingHTTPServer((host, port), handler)

@@ -99,6 +99,10 @@ _JOINT = frozenset({"joint", "structure"})
 _TOOL = frozenset({"tool", "structure"})
 _MOUNT = frozenset({"structure"})
 _ROOT = frozenset({"root", "structure"})
+_ARMOR = frozenset({"armor", "structure"})
+_WEAPON = frozenset({"weapon", "structure"})
+_THRUST = frozenset({"thrust", "structure"})
+_WINCH = frozenset({"winch", "tool", "structure"})
 
 
 def _build_catalog() -> dict[str, PartDefinition]:
@@ -107,22 +111,29 @@ def _build_catalog() -> dict[str, PartDefinition]:
         name="伙伴核心",
         category="核心",
         mass_kg=0.45,
-        size_m=(0.08, 0.08, 0.08),
+        # 略放大核心，拉开机甲区域挂点，避免头/肩/腿糊成一团
+        size_m=(0.1, 0.12, 0.1),
         power_w=2.0,
         ports=0,
         owned_by_default=True,
         price=0,
-        description="身份、主控制与结构根节点。",
+        description="身份、主控制与结构根节点；含机甲区域挂点。",
         icon="core",
         ability="控制",
         connection_points=(
             _point("root", _ROOT),
-            _point("mount_top", _STRUCTURE, y=0.04),
-            _point("mount_front", _STRUCTURE, z=0.04),
-            _point("mount_back", _STRUCTURE, z=-0.04),
-            _point("mount_left", _STRUCTURE, x=-0.04),
-            _point("mount_right", _STRUCTURE, x=0.04),
-            _point("mount_bottom", _STRUCTURE, y=-0.04),
+            _point("mount_top", _STRUCTURE, y=0.06),
+            _point("mount_front", _STRUCTURE, z=0.05),
+            _point("mount_back", _STRUCTURE, z=-0.05),
+            _point("mount_left", _STRUCTURE, x=-0.05),
+            _point("mount_right", _STRUCTURE, x=0.05),
+            _point("mount_bottom", _STRUCTURE, y=-0.06),
+            # 机甲区域槽：肩距拉宽、头抬高，轮廓可读
+            _point("slot_head", _ARMOR, y=0.08),
+            _point("slot_shoulder_l", _ARMOR, x=-0.1, y=0.04, z=0.01),
+            _point("slot_shoulder_r", _ARMOR, x=0.1, y=0.04, z=0.01),
+            _point("slot_backpack", frozenset({"structure", "thrust", "armor"}), z=-0.08, y=0.02),
+            _point("slot_hip", _STRUCTURE, y=-0.08),
         ),
     )
 
@@ -131,15 +142,15 @@ def _build_catalog() -> dict[str, PartDefinition]:
         name="板件",
         category="结构",
         mass_kg=0.12,
-        size_m=(0.12, 0.02, 0.12),
+        size_m=(0.14, 0.02, 0.14),
         description="扁平结构件，用于扩展安装面。",
         icon="plate",
         ability="结构",
         connection_points=(
             _point("face_a", _STRUCTURE, y=0.01),
             _point("face_b", _STRUCTURE, y=-0.01),
-            _point("face_c", _STRUCTURE, z=0.06),
-            _point("face_d", _STRUCTURE, z=-0.06),
+            _point("face_c", _STRUCTURE, z=0.07),
+            _point("face_d", _STRUCTURE, z=-0.07),
         ),
     )
 
@@ -178,7 +189,7 @@ def _build_catalog() -> dict[str, PartDefinition]:
         name="单轮",
         category="移动",
         mass_kg=0.08,
-        size_m=(0.02, 0.06, 0.06),
+        size_m=(0.03, 0.08, 0.08),
         power_w=0.0,
         ports=0,
         behaviors=frozenset({"roll"}),
@@ -314,6 +325,171 @@ def _build_catalog() -> dict[str, PartDefinition]:
         connection_points=(_point("mount", _TOOL, z=-0.04),),
     )
 
+    armor_torso = _part(
+        "armor_torso",
+        name="躯干装甲",
+        category="装甲",
+        mass_kg=0.32,
+        size_m=(0.16, 0.16, 0.14),
+        power_w=0.0,
+        ports=0,
+        behaviors=frozenset({"armor"}),
+        owned_by_default=True,
+        price=0,
+        description="覆盖核心的斜切装甲，改变正面轮廓与防御质量。",
+        icon="armor",
+        ability="防护",
+        connection_points=(
+            _point("mount", _ARMOR, z=-0.07),
+            _point("face_front", _STRUCTURE, z=0.07),
+            _point("face_top", _STRUCTURE, y=0.08),
+        ),
+    )
+
+    armor_shoulder = _part(
+        "armor_shoulder",
+        name="肩甲模块",
+        category="装甲",
+        mass_kg=0.14,
+        size_m=(0.12, 0.08, 0.1),
+        behaviors=frozenset({"armor"}),
+        owned_by_default=True,
+        price=40,
+        description="肩部装甲挂架，可再挂武器或附件。",
+        icon="shoulder",
+        ability="肩挂",
+        connection_points=(
+            _point("mount", _ARMOR),
+            _point("hardpoint", _WEAPON, y=0.05, z=0.02),
+        ),
+    )
+
+    mecha_head = _part(
+        "mecha_head",
+        name="机甲头罩",
+        category="装甲",
+        mass_kg=0.12,
+        size_m=(0.1, 0.1, 0.12),
+        behaviors=frozenset({"armor"}),
+        owned_by_default=True,
+        price=0,
+        description="传感头罩与观察窗，决定机甲上轮廓。",
+        icon="head",
+        ability="传感",
+        connection_points=(_point("mount", _ARMOR, y=-0.05),),
+    )
+
+    mecha_leg = _part(
+        "mecha_leg",
+        name="机甲腿架",
+        category="移动",
+        mass_kg=0.22,
+        size_m=(0.07, 0.18, 0.09),
+        power_w=0.5,
+        ports=1,
+        behaviors=frozenset({"roll", "structure"}),
+        owned_by_default=True,
+        price=50,
+        description="带轮毂接口的腿架，撑起机甲站立轮廓。",
+        icon="leg",
+        ability="支撑",
+        connection_points=(
+            _point("mount", _STRUCTURE, y=0.09),
+            _point("hub", _AXLE, y=-0.08),
+            _point("toe", _STRUCTURE, z=0.04, y=-0.08),
+        ),
+    )
+
+    backpack_frame = _part(
+        "backpack_frame",
+        name="背包框架",
+        category="结构",
+        mass_kg=0.16,
+        size_m=(0.12, 0.14, 0.1),
+        behaviors=frozenset({"armor"}),
+        owned_by_default=True,
+        price=60,
+        description="背部挂架，可装推进器、绞盘或储物。",
+        icon="backpack",
+        ability="背挂",
+        connection_points=(
+            _point("mount", frozenset({"structure", "thrust", "armor"}), z=0.05),
+            _point("bay", frozenset({"structure", "thrust", "winch"}), z=-0.05),
+        ),
+    )
+
+    weapon_rifle = _part(
+        "weapon_rifle",
+        name="工程步枪",
+        category="武器",
+        mass_kg=0.18,
+        size_m=(0.05, 0.05, 0.22),
+        power_w=2.0,
+        ports=1,
+        behaviors=frozenset({"weapon"}),
+        owned_by_default=True,
+        price=120,
+        description="肩挂或臂挂远程武器，消耗热量与弹药。",
+        icon="rifle",
+        ability="射击",
+        connection_points=(
+            _point("mount", _WEAPON, z=-0.1),
+            _point("muzzle", frozenset({"weapon"}), z=0.11),
+        ),
+    )
+
+    thruster_pack = _part(
+        "thruster_pack",
+        name="短时推进背包",
+        category="推进",
+        mass_kg=0.2,
+        size_m=(0.08, 0.1, 0.08),
+        power_w=3.0,
+        ports=1,
+        behaviors=frozenset({"thrust"}),
+        owned_by_default=False,
+        price=180,
+        description="短时冲刺与跃升，受燃料与热量限制。",
+        icon="thrust",
+        ability="推进",
+        connection_points=(_point("mount", _THRUST, z=0.04),),
+    )
+
+    winch_module = _part(
+        "winch_module",
+        name="绞盘模块",
+        category="工具",
+        mass_kg=0.15,
+        size_m=(0.06, 0.06, 0.08),
+        power_w=2.0,
+        ports=1,
+        behaviors=frozenset({"winch"}),
+        owned_by_default=False,
+        price=160,
+        description="发射钩索牵引自身或目标，解锁锚点路线。",
+        icon="winch",
+        ability="牵引",
+        connection_points=(_point("mount", _WINCH, z=-0.04),),
+    )
+
+    heavy_plate = _part(
+        "heavy_plate",
+        name="重型装甲板",
+        category="装甲",
+        mass_kg=0.4,
+        size_m=(0.14, 0.04, 0.12),
+        behaviors=frozenset({"armor"}),
+        owned_by_default=False,
+        price=140,
+        description="厚重装甲，提高承伤，显著增加质量与转向惯性。",
+        icon="heavy",
+        ability="重甲",
+        connection_points=(
+            _point("mount", _ARMOR, y=-0.02),
+            _point("face_a", _STRUCTURE, y=0.02),
+        ),
+    )
+
     # 与 engine.PARTS 对齐的经典零件（含迁移别名）
     battery = _part(
         "battery",
@@ -445,6 +621,15 @@ def _build_catalog() -> dict[str, PartDefinition]:
         pusher,
         hook,
         bucket,
+        armor_torso,
+        armor_shoulder,
+        mecha_head,
+        mecha_leg,
+        backpack_frame,
+        weapon_rifle,
+        thruster_pack,
+        winch_module,
+        heavy_plate,
         battery,
         camera,
         display,

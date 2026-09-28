@@ -33,6 +33,24 @@ function graspRange(sim) {
 }
 
 /**
+ * 抓取接触阶段：靠近 → 对准 → 开合 → 可抓。
+ * @returns {'too_far'|'misaligned'|'open'|'ready'|'holding'|'no_target'}
+ */
+export function graspPhase(sim, toolWorld, block, {holding = false} = {}) {
+  if (holding) return 'holding';
+  if (!toolWorld || !block) return 'no_target';
+  const d = dist3(toolWorld, block);
+  const maxD = graspRange(sim);
+  if (d > maxD) return 'too_far';
+  const dy = Math.abs((toolWorld?.y ?? 0) - (block?.y ?? 0));
+  if (dy > 0.14) return 'too_far';
+  if (!facingBlock(toolWorld, block)) return 'misaligned';
+  const open = Number(sim?.gripperOpen);
+  if (Number.isFinite(open) && open > 0.4) return 'open';
+  return 'ready';
+}
+
+/**
  * @param {object} sim buildSimFromBlueprint 结果（可用 reach）
  * @param {object} robotPose {x,z,yaw}
  * @param {object} toolWorld {x,y,z,yaw?}

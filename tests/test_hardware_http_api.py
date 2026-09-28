@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 from threading import Thread
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+import pytest
 
 from desktop_robot.passport.generate import generate_robot
 from desktop_robot.studio.http_server import make_server
@@ -48,16 +51,93 @@ def test_dual_track_pages_are_served(tmp_path: Path):
     thread.start()
     try:
         port = server.server_address[1]
-        index = get_text(port, "/")
+        index = get_text(port, "/?track=studio")
         design = get_text(port, "/design.html")
         assert "选择创作路线" in index
         assert "形象与互动" in index
-        assert "工程与制造" in index
+        assert "机器人结构设计" in index
         assert 'id="track-picker"' in index
+        assert 'class="brand" href="/"' in index
+        assert 'class="brand" href="/"' in design
         assert 'id="design-source"' in design
-        assert "导出工程交接" in design
+        assert "生成结构文件" in design
+        assert 'href="/assembly-3d.html"' in index
+        assert "3D 装配" in index
     finally:
         server.shutdown()
+
+
+def test_home_routes_keep_the_current_draft_or_robot_source():
+    root = Path("src/desktop_robot/studio/static")
+    index = (root / "index.html").read_text(encoding="utf-8")
+    design = (root / "design.html").read_text(encoding="utf-8")
+    assembly_3d = (root / "assembly-3d.html").read_text(encoding="utf-8")
+    robot = (root / "robot.html").read_text(encoding="utf-8")
+
+    assert 'id="track-design"' in index
+    assert 'id="track-assembly-3d"' in index
+    assert 'routeParams.has("home")' in index
+    assert '`/?track=studio${draftQuery}`' in index
+    assert '`/?home=1&draft=${encodeURIComponent(state.draftId)}`' in design
+    assert '`/?home=1&robot=${encodeURIComponent(state.robotId)}`' in design
+    assert '`/?home=1&draft=${encodeURIComponent(state.draftId)}`' in assembly_3d
+    assert '`/?home=1&robot=${encodeURIComponent(state.robotId)}`' in assembly_3d
+    assert '`/?home=1&robot=${encodeURIComponent(robotId)}`' in robot
+
+
+def test_assembly_3d_page_is_served_with_local_three(tmp_path: Path):
+    server = make_server("127.0.0.1", 0, tmp_path)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        page = get_text(port, "/assembly-3d.html")
+        assert 'id="scene"' in page
+        assert '"three":"/vendor/three/three.module.js"' in page
+        assert "REP-103" in page
+        # 视图只摆放补录过位置的零件，不臆造坐标。
+        assert "if (!item.position_mm) return;" in page
+
+        module = get_text(port, "/vendor/three/three.module.js")
+        assert "OrbitControls" in get_text(port, "/vendor/three/controls/OrbitControls.js")
+        assert len(module) > 100_000
+
+        with pytest.raises(HTTPError) as missing:
+            get_text(port, "/vendor/three/nope.js")
+        assert missing.value.code == 404
+    finally:
+        server.shutdown()
+
+
+def test_assembly_draft_list_is_sorted_and_skips_broken_files(tmp_path: Path):
+    server = make_server("127.0.0.1", 0, tmp_path)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        assert json.loads(get_text(port, "/api/assembly/drafts"))["drafts"] == []
+
+        first = post(port, "/api/assembly/save", {"name": "先存的", "assembly": ASSEMBLY})
+        second = post(port, "/api/assembly/save", {"name": "后存的", "assembly": ARM_ASSEMBLY})
+        (tmp_path / "assembly-drafts" / "broken.json").write_text("{", encoding="utf-8")
+
+        drafts = json.loads(get_text(port, "/api/assembly/drafts"))["drafts"]
+        by_id = {item["draft_id"]: item for item in drafts}
+        assert set(by_id) == {first["draft_id"], second["draft_id"]}
+        assert by_id[second["draft_id"]]["component_count"] == 3
+        assert by_id[first["draft_id"]]["name"] == "先存的"
+    finally:
+        server.shutdown()
+
+
+def test_assembly_3d_entry_points_carry_context(tmp_path: Path):
+    design = Path("src/desktop_robot/studio/static/design.html").read_text(encoding="utf-8")
+    robot = Path("src/desktop_robot/studio/static/robot.html").read_text(encoding="utf-8")
+    assert 'id="assembly-3d-link"' in design
+    assert "/assembly-3d.html?draft=${encodeURIComponent(state.draftId)}" in design
+    assert "/assembly-3d.html?robot=${encodeURIComponent(state.robotId)}" in design
+    assert 'id="assembly-3d-link"' in robot
+    assert "/assembly-3d.html?robot=${encodeURIComponent(robotId)}" in robot
 
 
 def test_design_page_contains_engineering_contract(tmp_path: Path):
@@ -198,8 +278,8 @@ def test_dual_track_links_and_export_contract_are_present():
     index = (root / "index.html").read_text(encoding="utf-8")
     robot = (root / "robot.html").read_text(encoding="utf-8")
     design = (root / "design.html").read_text(encoding="utf-8")
-    assert "工程与制造" in index
-    assert "工程与制造" in robot
+    assert "机器人结构设计" in index
+    assert "结构设计" in robot
     assert "/api/assembly/validate" in design
     assert "/api/assembly/design-export" in design
     assert "provisional，不可当作生产或仿真精确 URDF" in design

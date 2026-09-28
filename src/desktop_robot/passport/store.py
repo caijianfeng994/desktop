@@ -83,6 +83,32 @@ def load_assembly_draft(data_root: Path, draft_id: str) -> dict:
     return raw
 
 
+def list_assembly_drafts(data_root: Path) -> list[dict]:
+    """按最近修改时间列出装配草稿概要，损坏的文件直接跳过。"""
+    drafts = []
+    for path in sorted(draft_dir(data_root).glob("*.json")):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        assembly = raw.get("assembly")
+        drafts.append(
+            {
+                "draft_id": path.stem,
+                "name": raw.get("name") or "未命名装配",
+                "design_status": raw.get("design_status") or "provisional",
+                "component_count": len(assembly.get("components", []))
+                if isinstance(assembly, dict)
+                else 0,
+                "updated_at": path.stat().st_mtime,
+            }
+        )
+    drafts.sort(key=lambda item: item["updated_at"], reverse=True)
+    return drafts
+
+
 def save_avatar_glb(data_root: Path, robot_id: str, glb: bytes) -> Path:
     path = avatar_glb_path(data_root, robot_id)
     path.parent.mkdir(parents=True, exist_ok=True)

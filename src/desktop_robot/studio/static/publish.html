@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>机器人制作发布大厅</title>
+  <style>
+    :root { --bg:#09121c;--panel:#111d2a;--panel2:#172636;--line:#294055;--text:#eff6ff;--muted:#8fa4b9;--green:#47d7ad;--yellow:#f5b942;--blue:#4aa3f0; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--text); font-family:"SF Pro Text","PingFang SC",sans-serif; background:radial-gradient(850px 480px at 90% 0,#183d5d 0,transparent 60%),var(--bg); }
+    .shell { max-width:1080px; margin:auto; padding:28px 20px 60px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:18px; margin-bottom:34px; }
+    .brand { font-size:13px; letter-spacing:.13em; color:var(--muted); }
+    header a { color:var(--muted); text-decoration:none; }
+    h1 { margin:10px 0 8px; font-size:clamp(30px,5vw,52px); letter-spacing:-.04em; }
+    .lead { color:var(--muted); line-height:1.7; margin:0 0 24px; }
+    .notice { display:none; align-items:center; gap:10px; margin-bottom:18px; padding:13px 16px; border:1px solid #27785f; border-radius:12px; background:#12382f; color:#b9ffe9; }
+    .notice.show { display:flex; }
+    .toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+    .toolbar strong { font-size:18px; }
+    button { border:1px solid var(--line); border-radius:9px; background:transparent; color:var(--text); padding:8px 12px; cursor:pointer; }
+    .list { display:grid; gap:12px; }
+    .card { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:18px; align-items:center; padding:19px 20px; color:inherit; text-decoration:none; border:1px solid var(--line); border-radius:16px; background:linear-gradient(145deg,var(--panel2),var(--panel)); transition:.18s ease; }
+    .card:hover,.card:focus-visible { border-color:var(--blue); transform:translateY(-1px); outline:none; }
+    .card.highlight { border-color:var(--green); box-shadow:0 0 0 1px var(--green); }
+    .title-line { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:8px; }
+    .robot-name { font-size:20px; font-weight:750; }
+    .status { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:700; }
+    .status.pending { background:#3e3013; color:#ffd675; }
+    .status.in_progress { background:#113c34; color:#7ff0ce; }
+    .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+    .meta { display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--muted); font-size:13px; }
+    .claimant { margin-top:10px; color:#aef6df; font-size:13px; }
+    .arrow { color:var(--muted); font-size:22px; }
+    .empty,.error { padding:48px 20px; text-align:center; border:1px dashed var(--line); border-radius:16px; color:var(--muted); }
+    @media(max-width:640px){.shell{padding:20px 14px 44px}.card{padding:16px}.meta{display:grid;gap:5px}.toolbar{align-items:flex-end}}
+  </style>
+  <link rel="stylesheet" href="/game-assets/legacy.css">
+</head>
+<body>
+  <a class="workshop-return" href="/game#collection">← 返回小小工坊</a>
+  <main class="shell">
+    <header><div class="brand">DESKTOP ROBOT · BUILD BOARD</div><a href="/">返回装配台</a></header>
+    <h1>机器人制作发布大厅</h1>
+    <p class="lead">这里展示等待实体制作的机器人。打开发布单可以核对完整硬件和软件功能，并领取制作。</p>
+    <div class="notice" id="notice"><span>✓</span><span>机器人已发布，新增了一条“待制作”消息。</span></div>
+    <div class="toolbar"><strong id="count">制作需求</strong><button id="refresh" type="button">刷新状态</button></div>
+    <section class="list" id="list" aria-live="polite"><div class="empty">正在加载发布单…</div></section>
+  </main>
+  <script>
+    const listEl=document.getElementById('list'),countEl=document.getElementById('count');
+    const params=new URLSearchParams(location.search),publishedId=params.get('published');
+    const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const formatDate=value=>{try{return new Intl.DateTimeFormat('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value))}catch(_){return value||''}};
+    function card(item){const working=item.status==='in_progress';return `<a class="card ${item.publication_id===publishedId?'highlight':''}" href="/publish-detail.html?id=${encodeURIComponent(item.publication_id)}"><div><div class="title-line"><span class="robot-name">${esc(item.robot_name)}</span><span class="status ${esc(item.status)}"><i class="dot"></i>${working?'制作中':'待制作'}</span></div><div class="meta"><span>主控：${esc(item.board_name)}</span><span>${item.component_count} 个配件</span><span>${item.skill_count} 项软件功能</span><span>发布于 ${esc(formatDate(item.created_at))}</span></div>${working?`<div class="claimant">领取人：${esc(item.claimant_name||'未填写')}</div>`:''}</div><span class="arrow">→</span></a>`}
+    async function load(){try{const response=await fetch('/api/publications',{cache:'no-store'}),data=await response.json();if(!data.ok)throw new Error(data.reason||'加载失败');const items=data.publications||[];countEl.textContent=`制作需求 · ${items.length}`;listEl.innerHTML=items.length?items.map(card).join(''):'<div class="empty">还没有发布单。先从机器人页面发布一只吧。</div>'}catch(error){listEl.innerHTML=`<div class="error">${esc(error.message||'加载失败')}</div>`}}
+    document.getElementById('notice').classList.toggle('show',Boolean(publishedId));
+    document.getElementById('refresh').addEventListener('click',load);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});
+    load();setInterval(load,5000);
+  </script>
+</body>
+</html>

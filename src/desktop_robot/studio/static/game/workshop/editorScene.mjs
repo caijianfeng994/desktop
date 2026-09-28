@@ -5,21 +5,40 @@ import * as THREE from 'three';
 import {classifyParentPoints} from '../editor/compatible.mjs';
 import {pointsForInstance, sizeFromParams} from '../editor/params.mjs';
 import {worldPosesFromBlueprint as posesFromSim} from '../simulation/pose.mjs';
+import {checkAttachCollision, previewPoseAtPoint} from '../editor/attachPreview.mjs';
+import {materialForPart} from './materials.mjs';
+import {createSfx} from './sfx.mjs';
+import {createPartVisual, placePartVisual} from './partVisuals.mjs';
+import {damp, standardViewOrbit} from './cameraRig.mjs';
+import {getTheme, normalizeThemeId, themeForQuality} from './visualTheme.mjs';
 
 /** 与 Python PART_DEFINITIONS 对齐的 fallback 尺寸（米） */
 export const PART_SIZES = Object.freeze({
-  core: [0.08, 0.08, 0.08],
-  wheel: [0.02, 0.06, 0.06],
-  plate: [0.12, 0.02, 0.12],
+  core: [0.1, 0.12, 0.1],
+  wheel: [0.03, 0.08, 0.08],
+  drive_wheel: [0.03, 0.08, 0.08],
+  track_module: [0.04, 0.05, 0.12],
+  plate: [0.14, 0.02, 0.14],
   beam: [0.02, 0.02, 0.12],
   post: [0.03, 0.12, 0.03],
   revolute_joint: [0.04, 0.04, 0.04],
+  prism_joint: [0.04, 0.04, 0.08],
   gripper: [0.04, 0.04, 0.06],
   pusher: [0.08, 0.04, 0.02],
   hook: [0.03, 0.06, 0.04],
+  bucket: [0.1, 0.06, 0.08],
   battery: [0.05, 0.04, 0.08],
   camera: [0.04, 0.03, 0.04],
   display: [0.06, 0.04, 0.02],
+  armor_torso: [0.16, 0.16, 0.14],
+  armor_shoulder: [0.12, 0.08, 0.1],
+  mecha_head: [0.1, 0.1, 0.12],
+  mecha_leg: [0.07, 0.18, 0.09],
+  backpack_frame: [0.12, 0.14, 0.1],
+  weapon_rifle: [0.05, 0.05, 0.22],
+  thruster_pack: [0.08, 0.1, 0.08],
+  winch_module: [0.06, 0.06, 0.08],
+  heavy_plate: [0.14, 0.04, 0.12],
 });
 
 const SCALE = 12;
@@ -76,6 +95,12 @@ export class BlueprintEditorScene {
     this.disposed = false;
     this.meshes = new Map();
     this.markers = new THREE.Group();
+    this.previewRoot = new THREE.Group();
+    this.previewRoot.visible = false;
+    this._flashUntil = 0;
+    this._hoveredPoint = null;
+    this.themeId = 'warm';
+    this.quality = 'high';
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(COLORS.ground);
@@ -88,52 +113,87 @@ export class BlueprintEditorScene {
     this.camera.position.set(1.6, 1.4, 2.2);
     this.look = new THREE.Vector3(0, 0.2, 0);
 
-    this.scene.add(new THREE.HemisphereLight(0xfff7e5, 0x8c8977, 1.8));
-    const sun = new THREE.DirectionalLight(0xffe2ab, 2.4);
-    sun.position.set(-2, 4, 3);
+    this.hemi = new THREE.HemisphereLight(0xfff7e5, 0x8c8977, 1.9);
+    this.scene.add(this.hemi);
+    const sun = new THREE.DirectionalLight(0xffe2ab, 2.6);
+    sun.position.set(-2.2, 4.2, 3.2);
     this.scene.add(sun);
+    this.sun = sun;
+    this.fill = new THREE.DirectionalLight(0xc8d8e0, 0.65);
+    this.fill.position.set(3.2, 2.2, -2.2);
+    this.scene.add(this.fill);
+    this.rim = new THREE.DirectionalLight(0x88c8d8, 0.55);
+    this.rim.position.set(0.5, 1.5, -3.5);
+    this.scene.add(this.rim);
+    // 编辑器不用远雾，避免小机体被“吞掉”
+    this.scene.fog = null;
 
+    // 展示台略大于机体即可，过大只会把零件衬成豆粒
+    const padR = 0.2 * SCALE;
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(2.4, 48),
-      new THREE.MeshStandardMaterial({color: 0xd9cbb2, roughness: 0.9}),
+      new THREE.CylinderGeometry(padR, padR * 1.04, 0.04 * SCALE, 48),
+      new THREE.MeshStandardMaterial({color: 0xd9cbb2, roughness: 0.88, metalness: 0.08}),
     );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.02;
+    ground.position.y = -0.02 * SCALE;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.ground = ground;
+    this.groundRing = null;
 
     this.root = new THREE.Group();
     this.scene.add(this.root);
     this.scene.add(this.markers);
+    this.scene.add(this.previewRoot);
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.dragging = false;
     this.angle = 0.4;
     this.orbitRadius = 2.6;
+    this.elevation = 1.2;
+    this.reduceMotion = false;
+    this._targetAngle = this.angle;
+    this._targetRadius = this.orbitRadius;
+    this._targetElevation = this.elevation;
+    this._targetLook = this.look.clone();
+    this.sfx = createSfx({muted: false});
+
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
 
     this._onPointerDown = (e) => {
       this.dragging = true;
       this.startX = e.clientX;
+      this.startY = e.clientY;
       this.moved = false;
       this.renderer.domElement.setPointerCapture(e.pointerId);
     };
     this._onPointerMove = (e) => {
       if (!this.dragging) return;
       const dx = e.clientX - this.startX;
-      if (Math.abs(dx) > 2) this.moved = true;
-      this.angle += dx * 0.008;
+      const dy = e.clientY - this.startY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this.moved = true;
+      this._targetAngle += dx * 0.008;
+      this._targetElevation = Math.min(0.85 * SCALE, Math.max(0.12 * SCALE, this._targetElevation + dy * 0.01));
       this.startX = e.clientX;
+      this.startY = e.clientY;
     };
     this._onPointerUp = (e) => {
       if (!this.moved) this._pick(e);
       this.dragging = false;
+    };
+    this._onWheel = (e) => {
+      e.preventDefault();
+      this._targetRadius = Math.min(1.6 * SCALE, Math.max(0.35 * SCALE, this._targetRadius + e.deltaY * 0.003));
     };
     this._onResize = () => this.resize();
 
     this.renderer.domElement.addEventListener('pointerdown', this._onPointerDown);
     this.renderer.domElement.addEventListener('pointermove', this._onPointerMove);
     this.renderer.domElement.addEventListener('pointerup', this._onPointerUp);
+    this.renderer.domElement.addEventListener('wheel', this._onWheel, {passive: false});
     window.addEventListener('resize', this._onResize);
 
     this.resize();
@@ -161,11 +221,171 @@ export class BlueprintEditorScene {
     this.selectedId = id || null;
     this._applySelection();
     this._rebuildMarkers();
+    if (this.selectedId) this.focusSelection();
   }
 
   setPendingPart(partId) {
     this.pendingPartId = partId || null;
     this._rebuildMarkers();
+  }
+
+  setReduceMotion(on) {
+    this.reduceMotion = !!on;
+  }
+
+  setMuted(muted) {
+    this.sfx?.setMuted?.(!!muted);
+  }
+
+  setTheme(themeId) {
+    this.themeId = normalizeThemeId(themeId);
+    this._applyThemeVisuals();
+    this._rebuild();
+  }
+
+  setQuality(level) {
+    this.quality = level === 'low' ? 'low' : 'high';
+    this.renderer.shadowMap.enabled = this.quality === 'high';
+    if (this.sun) this.sun.castShadow = this.quality === 'high';
+    this._applyThemeVisuals();
+    this._rebuild();
+  }
+
+  _applyThemeVisuals() {
+    const theme = themeForQuality(getTheme(this.themeId), this.quality);
+    this.scene.background = new THREE.Color(theme.scene.background);
+    // 装配预览始终关闭雾，保证机体可读
+    this.scene.fog = null;
+    if (this.hemi) {
+      this.hemi.color.set(theme.lights.hemiSky);
+      this.hemi.groundColor.set(theme.lights.hemiGround);
+      this.hemi.intensity = Math.max(1.35, theme.lights.hemiIntensity);
+    }
+    if (this.sun) {
+      this.sun.color.set(theme.lights.sunColor);
+      this.sun.intensity = Math.max(2.0, theme.lights.sunIntensity);
+    }
+    if (this.fill) {
+      this.fill.color.set(theme.lights.fillColor ?? 0xc8d8e0);
+      this.fill.intensity = theme.lights.fillIntensity ?? 0.45;
+    }
+    if (this.ground?.material) {
+      const g = theme.env.editorGround;
+      this.ground.material.color.set(g.color);
+      this.ground.material.roughness = g.roughness;
+      this.ground.material.metalness = g.metalness ?? 0.15;
+    }
+    COLORS.marker = theme.markers.default;
+    COLORS.markerOk = theme.markers.ok;
+    COLORS.markerBad = theme.markers.bad;
+  }
+
+  playInstall() {
+    this.sfx?.play?.('install');
+  }
+
+  focusSelection() {
+    const mesh = this.selectedId ? this.meshes.get(this.selectedId) : null;
+    if (!mesh) return;
+    this._targetLook.copy(mesh.position);
+    this._targetRadius = Math.min(0.9 * SCALE, Math.max(0.35 * SCALE, this._targetRadius * 0.85));
+  }
+
+  frameAll({snap = true} = {}) {
+    if (!this.blueprint?.instances?.length) {
+      this._targetLook.set(0, 0.4 * SCALE, 0);
+      this._targetRadius = 0.55 * SCALE;
+      this._targetElevation = 0.32 * SCALE;
+      this._targetAngle = 0.85;
+      if (snap) this._snapCameraToTargets();
+      return;
+    }
+    this.root.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    for (const mesh of this.meshes.values()) {
+      box.expandByObject(mesh);
+    }
+    if (box.isEmpty()) {
+      this._targetLook.set(0, 0.4 * SCALE, 0);
+      this._targetRadius = 0.55 * SCALE;
+      if (snap) this._snapCameraToTargets();
+      return;
+    }
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    // 长臂会把包围盒中心拽到夹爪附近 —— 看向核心/躯干，轮与肩才进画
+    const rootId = this.blueprint.root_instance_id;
+    const core = rootId ? this.meshes.get(rootId) : null;
+    const isMecha = (this.blueprint.instances || []).some((i) =>
+      ['mecha_head', 'armor_torso', 'mecha_leg'].includes(i.part_id),
+    );
+    const look = new THREE.Vector3();
+    if (core) {
+      look.set(
+        core.position.x * 0.75 + center.x * 0.25,
+        Math.max(core.position.y + (isMecha ? 0.08 * SCALE : 0), size.y * (isMecha ? 0.38 : 0.28)),
+        core.position.z * 0.75 + center.z * 0.25,
+      );
+    } else {
+      look.set(center.x, Math.max(0.2 * SCALE, size.y * 0.35), center.z * 0.4);
+    }
+    this._targetLook.copy(look);
+    const corners = [
+      new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+    ];
+    let maxDist = 0;
+    for (const c of corners) maxDist = Math.max(maxDist, c.distanceTo(look));
+    // 机甲整机远景：必须看清头/肩/腿，禁止贴脸只剩一团方块
+    if (isMecha) {
+      this._targetRadius = Math.min(1.15 * SCALE, Math.max(0.55 * SCALE, maxDist * 1.55 + 0.15 * SCALE));
+      this._targetElevation = Math.max(0.28 * SCALE, Math.min(0.55 * SCALE, size.y * 0.55 + 0.16 * SCALE));
+      this._targetAngle = 0.85;
+    } else {
+      this._targetRadius = Math.min(0.95 * SCALE, Math.max(0.36 * SCALE, maxDist * 1.35 + 0.1 * SCALE));
+      this._targetElevation = Math.max(
+        0.22 * SCALE,
+        Math.min(0.55 * SCALE, size.y * 0.55 + 0.14 * SCALE),
+      );
+      this._targetAngle = 0.95;
+    }
+    if (this.ground) {
+      const padNeed = Math.max(
+        isMecha ? 0.18 * SCALE : 0.14 * SCALE,
+        Math.max(size.x, size.z) * (isMecha ? 0.48 : 0.55) + 0.08 * SCALE,
+      );
+      this.ground.scale.set(padNeed / (0.2 * SCALE), 1, padNeed / (0.2 * SCALE));
+    }
+    if (snap) this._snapCameraToTargets();
+  }
+
+  _snapCameraToTargets() {
+    this.angle = this._targetAngle;
+    this.orbitRadius = this._targetRadius;
+    this.elevation = this._targetElevation;
+    this.look.copy(this._targetLook);
+  }
+
+  setStandardView(name) {
+    const v = standardViewOrbit(name);
+    this._targetAngle = v.angle;
+    this._targetElevation = Math.max(0.2 * SCALE, v.elevation * (SCALE / 4));
+    this._targetRadius = Math.max(this._targetRadius, 0.55 * SCALE) * v.radiusScale;
+    if (name === 'top') this._targetLook.y = Math.max(this._targetLook.y, 0.08 * SCALE);
+  }
+
+  viewBottom() {
+    this._targetElevation = 0.18 * SCALE;
+    this._targetAngle += 0.01;
+    this._targetLook.y = Math.max(0.06 * SCALE, this._targetLook.y * 0.5);
   }
 
   _clearRoot() {
@@ -185,6 +405,7 @@ export class BlueprintEditorScene {
 
   _rebuild() {
     this._clearRoot();
+    this.clearPreview();
     if (!this.blueprint) {
       this._rebuildMarkers();
       return;
@@ -194,32 +415,128 @@ export class BlueprintEditorScene {
     for (const inst of this.blueprint.instances || []) {
       const size = sizeFor(inst, defs);
       const pose = poses[inst.instance_id] || zeroPose();
-      const color = inst.part_id === 'core' ? COLORS.core : COLORS.default;
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(size[0] * SCALE, size[1] * SCALE, size[2] * SCALE),
-        new THREE.MeshStandardMaterial({color, roughness: 0.55}),
-      );
-      mesh.position.set(pose.x * SCALE, pose.y * SCALE + (size[1] * SCALE) / 2, pose.z * SCALE);
-      mesh.rotation.y = pose.ry || 0;
-      mesh.castShadow = true;
-      mesh.userData.instanceId = inst.instance_id;
-      mesh.userData.partId = inst.part_id;
-      this.root.add(mesh);
-      this.meshes.set(inst.instance_id, mesh);
+      const visual = createPartVisual(inst.part_id, size, {themeId: this.themeId});
+      placePartVisual(visual, pose, SCALE, size[1]);
+      visual.userData.instanceId = inst.instance_id;
+      visual.userData.partId = inst.part_id;
+      visual.userData.size = size;
+      // 可点击代理：整组射线检测
+      visual.traverse((o) => {
+        if (o.isMesh) {
+          o.userData.instanceId = inst.instance_id;
+          o.userData.partId = inst.part_id;
+        }
+      });
+      this.root.add(visual);
+      this.meshes.set(inst.instance_id, visual);
     }
     this._applySelection();
     this._rebuildMarkers();
+    this.frameAll();
   }
 
   _applySelection() {
     for (const [id, mesh] of this.meshes) {
-      const base = mesh.userData.partId === 'core' ? COLORS.core : COLORS.default;
-      mesh.material.color.set(id === this.selectedId ? COLORS.selected : base);
-      mesh.material.emissive?.set?.(id === this.selectedId ? 0x664400 : 0x000000);
-      if (mesh.material.emissiveIntensity != null) {
-        mesh.material.emissiveIntensity = id === this.selectedId ? 0.25 : 0;
-      }
+      const selected = id === this.selectedId;
+      const partId = mesh.userData.partId;
+      const base = materialForPart(partId, this.themeId);
+      mesh.traverse((o) => {
+        if (!o.isMesh || !o.material?.color) return;
+        if (selected && o.material.emissive) {
+          o.material.emissive.set(0x664400);
+          o.material.emissiveIntensity = 0.28;
+        } else if (o.material.emissive) {
+          o.material.emissive.set(base.emissive || 0x000000);
+          o.material.emissiveIntensity = base.emissiveIntensity || 0;
+        }
+      });
     }
+  }
+
+  clearPreview() {
+    while (this.previewRoot.children.length) {
+      const c = this.previewRoot.children[0];
+      this.previewRoot.remove(c);
+      c.traverse?.((o) => {
+        o.geometry?.dispose?.();
+        if (o.material) {
+          if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose());
+          else o.material.dispose();
+        }
+      });
+    }
+    this.previewRoot.visible = false;
+    this._hoveredPoint = null;
+  }
+
+  /**
+   * 在连接点显示半透明预览；碰撞时标红。
+   * @returns {{ok:boolean, reason:string}}
+   */
+  showAttachPreview(parentInstanceId, pointId, childPartId) {
+    this.clearPreview();
+    if (!this.blueprint || !childPartId) return {ok: false, reason: '无预览'};
+    const defs = this._partDefs();
+    const poses = worldPosesFromBlueprint(this.blueprint, defs);
+    const parentPose = poses[parentInstanceId] || zeroPose();
+    const parentInst = this.blueprint.instances.find((i) => i.instance_id === parentInstanceId);
+    const parentDef = defs.get(parentInst?.part_id);
+    const points = pointsForInstance(
+      parentInst?.part_id,
+      parentDef?.connection_points,
+      parentInst?.params,
+      parentDef?.size_m || PART_SIZES[parentInst?.part_id],
+    );
+    const point = points.find((p) => p.id === pointId);
+    if (!point) return {ok: false, reason: '连接点不存在'};
+    const childDef = defs.get(childPartId);
+    const childSize = childDef?.size_m || PART_SIZES[childPartId] || [0.05, 0.05, 0.05];
+    const preview = previewPoseAtPoint(parentPose, point.pose, childSize);
+    const sizeById = new Map();
+    for (const inst of this.blueprint.instances) {
+      sizeById.set(inst.instance_id, sizeFor(inst, defs));
+    }
+    const collision = checkAttachCollision(
+      this.blueprint,
+      poses,
+      sizeById,
+      {x: preview.x, y: preview.y, z: preview.z},
+      childSize,
+    );
+    const visual = createPartVisual(childPartId, childSize, {themeId: this.themeId});
+    placePartVisual(visual, preview, SCALE, childSize[1]);
+    visual.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      o.material = o.material.clone();
+      o.material.transparent = true;
+      o.material.opacity = 0.45;
+      o.material.depthWrite = false;
+      if (!collision.ok) o.material.color.set(0xb07060);
+      else o.material.color.set(0x4caf7a);
+    });
+    this.previewRoot.add(visual);
+    this.previewRoot.visible = true;
+    this._hoveredPoint = {parentInstanceId, pointId, childPartId, collision};
+    return collision;
+  }
+
+  flashInstall(instanceId) {
+    const mesh = this.meshes.get(instanceId);
+    if (!mesh) return;
+    this._flashUntil = performance.now() + 420;
+    mesh.traverse((o) => {
+      if (o.isMesh && o.material?.emissive) {
+        o.material.emissive.set(0x88ffaa);
+        o.material.emissiveIntensity = 0.55;
+      }
+    });
+  }
+
+  /**
+   * 供外部在确认连接前做碰撞检查。
+   */
+  validateAttach(parentInstanceId, pointId, childPartId) {
+    return this.showAttachPreview(parentInstanceId, pointId, childPartId);
   }
 
   _rebuildMarkers() {
@@ -268,7 +585,7 @@ export class BlueprintEditorScene {
         }
       }
       const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(compatibleIds && compatible ? 0.032 : 0.022, 12, 10),
+        new THREE.SphereGeometry(compatibleIds && compatible ? 0.032 * SCALE : 0.022 * SCALE, 12, 10),
         new THREE.MeshBasicMaterial({
           color,
           transparent: !compatible && !!compatibleIds,
@@ -297,20 +614,40 @@ export class BlueprintEditorScene {
       -((e.clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects([...this.markers.children, ...this.root.children], false);
+    const hits = this.raycaster.intersectObjects(
+      [...this.markers.children, ...this.root.children],
+      true,
+    );
     if (!hits.length) {
+      this.clearPreview();
       this.callbacks.onSelect?.(null);
       return;
     }
-    const hit = hits[0].object;
+    let hit = hits[0].object;
+    while (hit && !hit.userData?.isPoint && !hit.userData?.instanceId) hit = hit.parent;
+    if (!hit) return;
     if (hit.userData.isPoint) {
-      this.callbacks.onPickPoint?.(hit.userData.instanceId, hit.userData.pointId, {
-        compatible: hit.userData.compatible !== false,
-        reason: hit.userData.reason || '',
-      });
+      if (this.pendingPartId) {
+        const collision = this.showAttachPreview(
+          hit.userData.instanceId,
+          hit.userData.pointId,
+          this.pendingPartId,
+        );
+        this.callbacks.onPickPoint?.(hit.userData.instanceId, hit.userData.pointId, {
+          compatible: hit.userData.compatible !== false && collision.ok,
+          reason: !collision.ok ? collision.reason : hit.userData.reason || '',
+          collisionOk: collision.ok,
+        });
+      } else {
+        this.callbacks.onPickPoint?.(hit.userData.instanceId, hit.userData.pointId, {
+          compatible: hit.userData.compatible !== false,
+          reason: hit.userData.reason || '',
+        });
+      }
       return;
     }
     if (hit.userData.instanceId) {
+      this.clearPreview();
       this.callbacks.onSelect?.(hit.userData.instanceId);
     }
   }
@@ -327,12 +664,24 @@ export class BlueprintEditorScene {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.frame);
     if (document.hidden) return;
+    const dt = Math.min(0.05, ((now - this.last) || 16) / 1000);
+    const lambda = this.reduceMotion ? 3 : 12;
+    this.angle = damp(this.angle, this._targetAngle, lambda, dt);
+    this.orbitRadius = damp(this.orbitRadius, this._targetRadius, lambda, dt);
+    this.elevation = damp(this.elevation, this._targetElevation, lambda, dt);
+    this.look.x = damp(this.look.x, this._targetLook.x, lambda, dt);
+    this.look.y = damp(this.look.y, this._targetLook.y, lambda, dt);
+    this.look.z = damp(this.look.z, this._targetLook.z, lambda, dt);
     this.camera.position.set(
-      Math.sin(this.angle) * this.orbitRadius,
-      1.2,
-      Math.cos(this.angle) * this.orbitRadius,
+      this.look.x + Math.sin(this.angle) * this.orbitRadius,
+      this.look.y + this.elevation,
+      this.look.z + Math.cos(this.angle) * this.orbitRadius,
     );
     this.camera.lookAt(this.look);
+    if (this._flashUntil && now > this._flashUntil) {
+      this._flashUntil = 0;
+      this._applySelection();
+    }
     this.renderer.render(this.scene, this.camera);
     this.last = now;
   }
@@ -343,6 +692,7 @@ export class BlueprintEditorScene {
     this.renderer.domElement.removeEventListener('pointerdown', this._onPointerDown);
     this.renderer.domElement.removeEventListener('pointermove', this._onPointerMove);
     this.renderer.domElement.removeEventListener('pointerup', this._onPointerUp);
+    this.renderer.domElement.removeEventListener('wheel', this._onWheel);
     window.removeEventListener('resize', this._onResize);
     this._clearRoot();
     while (this.markers.children.length) {

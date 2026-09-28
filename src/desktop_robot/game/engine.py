@@ -108,6 +108,28 @@ def initial_state() -> dict:
         blueprints=[bp.model_dump(mode="json")],
         active_blueprint_id=bp.id,
         component_library=[],
+        inventory={"parts": {}, "schematics": []},
+        owned_freeform=[
+            "core",
+            "plate",
+            "beam",
+            "post",
+            "wheel",
+            "drive_wheel",
+            "revolute_joint",
+            "prism_joint",
+            "gripper",
+            "pusher",
+            "hook",
+            "battery",
+            "armor_torso",
+            "armor_shoulder",
+            "mecha_head",
+            "mecha_leg",
+            "backpack_frame",
+            "weapon_rifle",
+            "heavy_plate",
+        ],
     )
 
 
@@ -126,7 +148,95 @@ def migrate_state(state: dict) -> dict:
     state.setdefault("completed_challenges", [])
     state.setdefault("challenge", None)
     state.setdefault("component_library", [])
+    state.setdefault("inventory", {"parts": {}, "schematics": []})
+    inv = state["inventory"]
+    inv.setdefault("parts", {})
+    inv.setdefault("schematics", [])
+    if state.get("version", 1) < 4:
+        # 机甲动作：补齐自由装配零件库存；推进/绞盘靠书架掉落解锁
+        owned_ff = set(state.get("owned_freeform") or [])
+        owned_ff.update(
+            {
+                "core",
+                "plate",
+                "beam",
+                "post",
+                "wheel",
+                "drive_wheel",
+                "revolute_joint",
+                "prism_joint",
+                "gripper",
+                "pusher",
+                "hook",
+                "battery",
+                "armor_torso",
+                "armor_shoulder",
+                "mecha_head",
+                "mecha_leg",
+                "backpack_frame",
+                "weapon_rifle",
+                "heavy_plate",
+            }
+        )
+        state["owned_freeform"] = sorted(owned_ff)
+        state["version"] = 4
+    state.setdefault(
+        "owned_freeform",
+        [
+            "core",
+            "plate",
+            "beam",
+            "post",
+            "wheel",
+            "armor_torso",
+            "armor_shoulder",
+            "mecha_head",
+            "mecha_leg",
+            "backpack_frame",
+            "weapon_rifle",
+        ],
+    )
     return state
+
+
+def _grant_loot(state: dict, loot: list | None) -> list[str]:
+    """将挑战掉落写入 inventory / owned_freeform，返回文案片段。"""
+    notes: list[str] = []
+    if not loot:
+        return notes
+    inv = state.setdefault("inventory", {"parts": {}, "schematics": []})
+    parts = inv.setdefault("parts", {})
+    schematics = inv.setdefault("schematics", [])
+    owned_ff = set(state.get("owned_freeform") or [])
+    for item in loot:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "part":
+            pid = item.get("part_id")
+            qty = int(item.get("qty") or 1)
+            if not pid:
+                continue
+            parts[pid] = int(parts.get(pid) or 0) + qty
+            owned_ff.add(pid)
+            notes.append(f"零件 {pid} ×{qty}")
+        elif item.get("type") == "schematic":
+            sid = item.get("id") or item.get("unlocks")
+            if not sid:
+                continue
+            if not any(s.get("id") == sid for s in schematics if isinstance(s, dict)):
+                schematics.append(
+                    {
+                        "id": sid,
+                        "name": item.get("name") or sid,
+                        "unlocks": item.get("unlocks"),
+                    }
+                )
+            unlock = item.get("unlocks")
+            if unlock:
+                owned_ff.add(unlock)
+            notes.append(item.get("name") or sid)
+    state["owned_freeform"] = sorted(owned_ff)
+    return notes
 
 
 def sync_blueprint_with_equipped(state: dict) -> None:
@@ -150,11 +260,22 @@ _FREEFORM_PART_IDS = frozenset(
         "post",
         "wheel",
         "drive_wheel",
+        "track_module",
         "revolute_joint",
         "prism_joint",
         "gripper",
         "pusher",
         "hook",
+        "bucket",
+        "armor_torso",
+        "armor_shoulder",
+        "mecha_head",
+        "mecha_leg",
+        "backpack_frame",
+        "weapon_rifle",
+        "thruster_pack",
+        "winch_module",
+        "heavy_plate",
     }
 )
 
@@ -192,6 +313,8 @@ def snapshot(state: dict) -> dict:
         "part_defs": PART_DEFS,
         "missions": MISSIONS,
         "open_challenges": list(OPEN_CHALLENGES),
+        "inventory": state.get("inventory") or {"parts": {}, "schematics": []},
+        "owned_freeform": list(state.get("owned_freeform") or []),
         "world": {"size": 9, "home": HOME, "blocked": BLOCKED, "low": LOW_OBSTACLES},
     }
     active_id = state.get("active_blueprint_id")
@@ -380,9 +503,11 @@ def apply_action(state: dict, payload: dict) -> str:
             state["coins"] += int(challenge_def["reward"])
             state["xp"] += int(challenge_def["xp"])
             completed.append(challenge_def["id"])
+            loot_notes = _grant_loot(state, challenge_def.get("loot"))
+            loot_txt = ("；掉落：" + "、".join(loot_notes)) if loot_notes else ""
             return (
                 f"挑战完成！获得 {challenge_def['reward']} 零件币和 "
-                f"{challenge_def['xp']} 默契。"
+                f"{challenge_def['xp']} 默契{loot_txt}。"
             )
         return "再次完成挑战！首次奖励已经领取，这次留下新的练习。"
     if action == "save_component":

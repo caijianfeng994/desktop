@@ -10,7 +10,18 @@
 <div id="world" aria-label="可交互的三维桌面"></div><div class="vignette"></div>
 <header class="topbar">
  <a href="/" class="brand"><span class="brand-mark" data-icon="robot"></span><span>小小工坊<small>A LITTLE ROBOT, A BIG WORLD</small></span></a>
- <div class="top-right"><div class="resource" title="完成委托获得零件币"><i data-icon="coin"></i><span id="coins">—</span><small>零件币</small></div><button class="resource" id="charge" title="在工坊充电"><i data-icon="battery"></i><span id="energy">—</span></button><button class="round" id="help" aria-label="玩法帮助"><i data-icon="help"></i></button></div>
+ <div class="top-right">
+  <div class="resource" title="完成委托获得零件币"><i data-icon="coin"></i><span id="coins">—</span><small>零件币</small></div>
+  <button class="resource" id="charge" title="在工坊充电"><i data-icon="battery"></i><span id="energy">—</span></button>
+  <div class="theme-switch top-theme" role="group" aria-label="视觉主题">
+   <span class="theme-label">主题</span>
+   <button type="button" class="cam-btn theme-btn is-active" data-theme="warm" aria-pressed="true">温暖</button>
+   <button type="button" class="cam-btn theme-btn" data-theme="mecha" aria-pressed="false">机甲</button>
+   <button type="button" class="cam-btn theme-btn" data-theme="wasteland" aria-pressed="false">废土</button>
+   <button type="button" class="cam-btn theme-btn" data-theme="future" aria-pressed="false">未来</button>
+  </div>
+  <button class="round" id="help" aria-label="玩法帮助"><i data-icon="help"></i></button>
+ </div>
 </header>
 <main id="interface">
 <section id="home" class="screen">
@@ -25,38 +36,103 @@
  <div class="assembly-center"><span class="model-badge">小方 / MODULAR COMPANION</span><div class="drop-target" id="drop-target" aria-label="将零件拖到这里安装"></div><span class="rotate-hint"><i data-icon="rotate"></i> 拖动空白处旋转视角</span></div>
  <aside class="assembly-status paper"><div class="panel-heading"><h2><i data-icon="tool"></i> 装配状态</h2><span class="status-tag">实时同步</span></div><div class="meter-label">供电预算 <b id="power-label"></b></div><div class="meter"><span id="power-meter"></span></div><div class="meter-label">接口占用 <b id="port-label"></b></div><div id="port-dots" class="port-dots"></div><div class="divider"></div><span class="eyebrow">已解锁能力</span><div id="abilities" class="abilities"></div><p id="assembly-tip" class="tip"></p><button type="button" class="dark full" id="apply-starter-loadout">应用推荐装配（首关）</button><button type="button" class="dark full" data-view="build">自由装配 <i data-icon="parts"></i></button><button class="primary full" data-view="missions">前往委托板 <i data-icon="play"></i></button><a class="text-link" href="/?track=studio">高级硬件装配 <i data-icon="arrow"></i></a></aside>
 </section>
-<section id="build" class="screen" hidden>
- <div class="section-title"><span class="eyebrow">FREEFORM BLUEPRINT</span><h1>自由装配工位。</h1><p>点选零件与连接点，搭出你的机架。</p><p id="build-status" class="build-status" aria-live="polite">尚未载入作品</p></div>
- <div class="build-center"><div id="build-world" class="build-world" aria-label="三维蓝图编辑场景"></div><span class="rotate-hint"><i data-icon="rotate"></i> 拖动旋转 · 点击选中</span></div>
- <aside class="build-parts paper"><div class="panel-heading"><h2><i data-icon="parts"></i> 自由零件</h2><button type="button" class="text-button" id="build-toggle-parts" aria-expanded="true">收起零件库</button></div><div id="build-part-palette" class="build-palette">
-  <button type="button" class="build-part-btn" data-build-part="wheel">单轮</button>
-  <button type="button" class="build-part-btn" data-build-part="plate">板件</button>
-  <button type="button" class="build-part-btn" data-build-part="beam">连接杆</button>
-  <button type="button" class="build-part-btn" data-build-part="post">立柱</button>
-  <button type="button" class="build-part-btn" data-build-part="revolute_joint">转动关节</button>
-  <button type="button" class="build-part-btn" data-build-part="prism_joint">伸缩模块</button>
-  <button type="button" class="build-part-btn" data-build-part="gripper">夹爪</button>
-  <button type="button" class="build-part-btn" data-build-part="pusher">推板</button>
-  <button type="button" class="build-part-btn" data-build-part="hook">钩子</button>
-  <button type="button" class="build-part-btn" data-build-part="battery">电池配重</button>
- </div><div id="build-params" class="build-params"><p class="tip">选中零件后可调尺寸参数</p></div>
- <div id="build-bindings" class="build-bindings"><p class="tip">控制绑定：选中零件后点动作按钮</p></div>
- <div id="build-components" class="build-components"><p class="tip">自制组件库</p></div>
- <p class="panel-foot">从空机架开始 · 绿色连接点可装</p></aside>
+<section id="build" class="screen hangar-screen" hidden>
+ <div class="hangar-banner">
+  <div>
+   <span class="eyebrow">FREEFORM</span>
+   <h1>自由装配</h1>
+   <p id="build-guide" class="build-guide">左选零件，中间拼装预览，右侧看质量与可达。保存后进试验场。</p>
+  </div>
+  <p id="build-status" class="build-status" aria-live="polite">尚未载入作品</p>
+ </div>
+ <div class="hangar-layout">
+  <aside class="build-parts paper hangar-left"><div class="panel-heading"><h2>零件库</h2><button type="button" class="text-button" id="build-toggle-parts" aria-expanded="true">收起</button></div>
+  <p id="build-pick-hint" class="build-pick-hint tip">点零件 → 再点画布连接点</p>
+  <div id="build-part-palette" class="build-palette">
+   <button type="button" class="build-part-btn" data-build-part="mecha_head">头罩</button>
+   <button type="button" class="build-part-btn" data-build-part="armor_torso">躯干甲</button>
+   <button type="button" class="build-part-btn" data-build-part="armor_shoulder">肩甲</button>
+   <button type="button" class="build-part-btn" data-build-part="mecha_leg">腿架</button>
+   <button type="button" class="build-part-btn" data-build-part="backpack_frame">背包架</button>
+   <button type="button" class="build-part-btn" data-build-part="weapon_rifle">工程步枪</button>
+   <button type="button" class="build-part-btn" data-build-part="thruster_pack">推进背包</button>
+   <button type="button" class="build-part-btn" data-build-part="winch_module">绞盘</button>
+   <button type="button" class="build-part-btn" data-build-part="heavy_plate">重甲板</button>
+   <button type="button" class="build-part-btn" data-build-part="wheel">单轮</button>
+   <button type="button" class="build-part-btn" data-build-part="plate">板件</button>
+   <button type="button" class="build-part-btn" data-build-part="beam">连接杆</button>
+   <button type="button" class="build-part-btn" data-build-part="post">立柱</button>
+   <button type="button" class="build-part-btn" data-build-part="revolute_joint">转动关节</button>
+   <button type="button" class="build-part-btn" data-build-part="prism_joint">伸缩模块</button>
+   <button type="button" class="build-part-btn" data-build-part="gripper">夹爪</button>
+   <button type="button" class="build-part-btn" data-build-part="pusher">推板</button>
+   <button type="button" class="build-part-btn" data-build-part="hook">钩子</button>
+   <button type="button" class="build-part-btn" data-build-part="battery">电池配重</button>
+  </div><div id="build-params" class="build-params"><p class="tip">选中零件后可调尺寸参数</p></div>
+  <details class="build-advanced">
+   <summary>高级：控制绑定与组件</summary>
+   <div id="build-bindings" class="build-bindings"><p class="tip">控制绑定：选中零件后点动作按钮</p></div>
+   <div id="build-components" class="build-components"><p class="tip">自制组件库</p></div>
+  </details>
+  <p class="panel-foot">绿色点可装 · 灰色点会说明原因</p></aside>
+  <div class="build-center hangar-center"><div id="build-world" class="build-world" aria-label="三维蓝图编辑场景"></div>
+   <div id="build-empty-cta" class="build-empty-cta" hidden>
+    <strong>还只有一个核心</strong>
+    <p>新手直接套用工程机甲模板：头罩、装甲、腿架与肩枪。</p>
+    <button type="button" class="primary" id="build-quick-start">一键装上工程机甲</button>
+    <button type="button" class="dark" id="build-empty-pick">我想自己选零件</button>
+   </div>
+   <div class="build-cam-bar" role="toolbar" aria-label="装配镜头">
+    <button type="button" class="cam-btn" id="build-cam-frame" title="整机取景">整机</button>
+    <button type="button" class="cam-btn" id="build-cam-front">前</button>
+    <button type="button" class="cam-btn" id="build-cam-side">侧</button>
+    <button type="button" class="cam-btn" id="build-cam-top">顶</button>
+    <button type="button" class="cam-btn" id="build-cam-bottom">仰视</button>
+    <button type="button" class="cam-btn" id="build-cam-focus">聚焦选中</button>
+    <label class="cam-check"><input type="checkbox" id="build-reduce-motion"> 减少镜头运动</label>
+    <label class="cam-check"><input type="checkbox" id="build-mute-sfx"> 静音</label>
+   </div>
+   <span class="rotate-hint"><i data-icon="rotate"></i> 拖动旋转 · 滚轮缩放 · 点击选中</span>
+  </div>
+  <aside class="hangar-stats paper" id="hangar-stats" aria-live="polite">
+   <span class="eyebrow">结构数据</span>
+   <div id="hangar-metrics" class="hangar-metrics"><p class="tip">装上零件后显示质量、可达与倾覆风险</p></div>
+   <p class="tip">结构决定外形：换头罩/装甲/腿架后轮廓会变。试验场可切跟随 / 驾驶舱。</p>
+  </aside>
+ </div>
  <div class="build-toolbar paper">
-  <button type="button" class="dark" id="build-new-empty">新建空机架</button>
+  <button type="button" class="primary" id="build-apply-mecha">装工程机甲</button>
+  <button type="button" class="primary" id="build-save">保存</button>
+  <button type="button" class="dark" id="build-enter-yard">出击试验场</button>
   <button type="button" class="dark" id="build-undo">撤销</button>
   <button type="button" class="dark" id="build-redo">重做</button>
-  <button type="button" class="dark" id="build-detach">拆卸选中</button>
-  <button type="button" class="dark" id="build-save-component">存为组件</button>
-  <button type="button" class="dark" id="build-apply-quad">教学模板（可拆改）</button>
-  <button type="button" class="primary" id="build-save">保存蓝图</button>
-  <button type="button" class="dark" id="build-enter-yard">进入试验场</button>
+  <details class="build-more">
+   <summary>更多</summary>
+   <button type="button" class="dark" id="build-apply-quad">装四轮旧模板</button>
+   <button type="button" class="dark" id="build-new-empty">新建空机架</button>
+   <button type="button" class="dark" id="build-detach">拆卸选中</button>
+   <button type="button" class="dark" id="build-save-component">存为组件</button>
+  </details>
  </div>
 </section>
 <section id="yard" class="screen" hidden>
- <div class="section-title"><span class="eyebrow">TEST YARD</span><h1>物理试验场。</h1><p>试跑结构、窄门与抓取；失败可扶正或回起点。</p></div>
- <div class="yard-center"><div id="yard-world" class="yard-world" aria-label="三维试验场"></div></div>
+ <div class="section-title"><span class="eyebrow">TEST YARD</span><h1>机甲试验场。</h1><p>跟随或驾驶舱出击。书架救援含巡逻敌机；失败回起点不丢作品。</p><p id="yard-status" class="build-status" aria-live="polite">尚未载入试跑作品</p></div>
+ <div class="yard-center"><div id="yard-world" class="yard-world" aria-label="三维试验场">
+   <div class="cockpit-reticle" id="cockpit-reticle" hidden aria-hidden="true"></div>
+   <div class="cockpit-hud" id="cockpit-hud">HP — · 弹药 —</div>
+  </div>
+  <div class="build-cam-bar" role="toolbar" aria-label="试验场镜头">
+   <button type="button" class="cam-btn is-active" id="yard-cam-follow">跟随</button>
+   <button type="button" class="cam-btn" id="yard-cam-cockpit">驾驶舱</button>
+   <button type="button" class="cam-btn" id="yard-cam-orbit">环绕</button>
+   <button type="button" class="cam-btn" id="yard-cam-tool">聚焦工具</button>
+   <button type="button" class="cam-btn" id="yard-cam-frame">整机</button>
+   <label class="cam-check"><input type="checkbox" id="yard-reduce-motion"> 减少镜头运动</label>
+   <label class="cam-check"><input type="checkbox" id="yard-mute-sfx"> 静音</label>
+   <label class="cam-check"><input type="checkbox" id="yard-quality-low"> 低画质</label>
+   <label class="cam-check"><input type="checkbox" id="yard-debug"> 调试叠加</label>
+  </div>
+ </div>
  <aside class="yard-help paper">
   <span class="eyebrow">CONTROLS</span>
   <ul class="yard-keys">
@@ -64,16 +140,22 @@
    <li><kbd>Q</kbd> / <kbd>E</kbd> · 抬臂</li>
    <li><kbd>Z</kbd> / <kbd>C</kbd> · 伸缩</li>
    <li><kbd>F</kbd> · 夹爪开合</li>
-   <li><kbd>Space</kbd> · 抓取 / 放下</li>
-   <li><kbd>R</kbd> · 回起点</li>
+   <li><kbd>R</kbd> · 抓取 / 放下（安装推进背包后也可使用）</li>
+   <li><kbd>T</kbd> · 射击（需步枪）；驾驶舱中拖动瞄准、单击射击</li>
+   <li><kbd>G</kbd> · 绞盘（需模块）</li>
+   <li><kbd>Space</kbd> · 推进（有背包）/ 抓取</li>
+   <li><kbd>X</kbd> · 回起点</li>
   </ul>
-  <p class="tip">窄门约 0.25m。坡道为视觉占位。桌缝挑战掉落会复位。倾覆后点「扶正」。</p>
+  <p class="tip">窄门约 0.25m。书架救援：绕开或击毁巡逻敌，救回上层目标。倾覆或失去行动力会回起点，作品不丢。</p>
   <div id="yard-diagnostics" class="yard-diagnostics tip">诊断加载中…</div>
+  <div id="yard-structure-hint" class="yard-diagnostics tip" hidden></div>
  </aside>
  <div class="yard-toolbar paper">
   <button type="button" class="dark" id="yard-upright">扶正</button>
   <button type="button" class="dark" id="yard-reset">回起点</button>
   <button type="button" class="dark" id="yard-exit">回编辑</button>
+  <button type="button" class="dark" id="yard-contrast">结构对比</button>
+  <button type="button" class="primary" id="yard-challenge-shelf">书架救援</button>
   <button type="button" class="primary" id="yard-challenge">抽屉挑战</button>
   <button type="button" class="primary" id="yard-challenge-gap">跨桌缝救援</button>
   <button type="button" class="primary" id="yard-submit-challenge" hidden>提交挑战</button>
@@ -105,5 +187,5 @@
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="loading" class="loading"><span class="loading-robot" data-icon="robot"></span><h2>正在打开你的小小工坊</h2><p>给伙伴一点准备的时间…</p><button hidden id="retry" class="primary">重新加载</button></div>
 <dialog id="modal"><button class="modal-close round" aria-label="关闭">×</button><div id="modal-content"></div></dialog>
-<script type="module" src="/game-assets/game.js"></script>
+<script type="module" src="/game-assets/game.js?v=mecha-silhouette-2"></script>
 </body></html>
