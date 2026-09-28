@@ -64,14 +64,14 @@ const BUILD_SLOT_TABS=[
 let buildDirty=false,buildSaving=false,buildSaveFailed=false,pendingComponent=null;
 let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0,fire:0,thrust:0,winch:0},yardChallengeSubmitting=false;
 let yardDiagTimer=null;
-const THEME_KEY='gameVisualTheme';
-const THEME_IDS=new Set(['toy','warm','mecha','wasteland','future']);
+const THEME_KEY='gameVisualThemeV2';
+const THEME_IDS=new Set(['kit','toy','warm','mecha','wasteland','future']);
 function normalizeThemeId(id){
  const s=String(id||'').trim().toLowerCase();
- return THEME_IDS.has(s)?s:'toy';
+ return THEME_IDS.has(s)?s:'kit';
 }
 function readStoredTheme(){
- try{return normalizeThemeId(localStorage.getItem(THEME_KEY))}catch{return 'toy'}
+ try{return normalizeThemeId(localStorage.getItem(THEME_KEY))}catch{return 'kit'}
 }
 function syncThemeButtons(themeId){
  $$('.theme-btn').forEach(btn=>{
@@ -254,7 +254,7 @@ function applyEngineerMechaTemplate({quiet=false}={}){
  editorScene?.setSelected(buildSelected);
  // 玩具主题最配发光表情与漆面；仍可手动切回其他主题
  if(normalizeThemeId(document.body.dataset.theme)!=='toy'){
-  applyVisualTheme('toy');
+  applyVisualTheme('kit');
  }
  editorScene?.frameAll?.({snap:true});
  setBuildGuide('工程机甲已装好：头罩、装甲、腿架与肩枪。保存后进试验场。');
@@ -776,6 +776,13 @@ document.addEventListener('click',e=>{
  if(!btn)return;
  applyVisualTheme(btn.dataset.theme);
  toast(`已切换视觉主题：${btn.textContent.trim()}`);
+});
+$('#build-toggle-callouts')?.addEventListener('click',()=>{
+ const on=!(editorScene?.calloutsOn??true);
+ editorScene?.setCallouts?.(on);
+ const btn=$('#build-toggle-callouts');
+ btn?.classList.toggle('is-active',on);
+ btn?.setAttribute('aria-pressed',on?'true':'false');
 });
 applyVisualTheme(readStoredTheme(),{persist:false});
 $('#yard-contrast')?.addEventListener('click',async()=>{

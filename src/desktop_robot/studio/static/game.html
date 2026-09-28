@@ -15,7 +15,8 @@
   <button class="resource" id="charge" title="在工坊充电"><i data-icon="battery"></i><span id="energy">—</span></button>
   <div class="theme-switch top-theme" role="group" aria-label="视觉主题">
    <span class="theme-label">主题</span>
-   <button type="button" class="cam-btn theme-btn is-active" data-theme="toy" aria-pressed="true">玩具</button>
+   <button type="button" class="cam-btn theme-btn is-active" data-theme="kit" aria-pressed="true">装配台</button>
+   <button type="button" class="cam-btn theme-btn" data-theme="toy" aria-pressed="false">玩具</button>
    <button type="button" class="cam-btn theme-btn" data-theme="warm" aria-pressed="false">温暖</button>
    <button type="button" class="cam-btn theme-btn" data-theme="mecha" aria-pressed="false">机甲</button>
    <button type="button" class="cam-btn theme-btn" data-theme="wasteland" aria-pressed="false">废土</button>
@@ -62,6 +63,7 @@
   </details>
   <p class="panel-foot">绿色点可装 · 灰色点会说明原因</p></aside>
   <div class="build-center hangar-center"><div id="build-world" class="build-world" aria-label="三维蓝图编辑场景"></div>
+   <button type="button" class="cam-btn callout-btn is-active" id="build-toggle-callouts" aria-pressed="true">标注</button>
    <div id="build-empty-cta" class="build-empty-cta" hidden>
     <strong>还只有一个核心</strong>
     <p>新手直接套用工程机甲模板：头罩、装甲、腿架与肩枪。</p>

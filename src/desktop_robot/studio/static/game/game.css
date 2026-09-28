@@ -20,8 +20,28 @@ body[data-view="build"] #world,body[data-view="yard"] #world{visibility:hidden}
 .top-theme .cam-btn{padding:5px 9px;font-size:11px}
 .theme-btn.is-active{background:var(--teal);border-color:var(--teal);color:#fff9ed}
 
-/* —— 视觉主题：玩具 / 机甲 / 废土 / 未来 —— */
-/* 玩具：蓝紫影棚 UI（默认主题，不改 :root 的温暖值） */
+/* —— 视觉主题：装配台 / 玩具 / 机甲 / 废土 / 未来 —— */
+/* 装配台：深炭影棚 UI（默认主题，不改 :root 的温暖值） */
+body[data-theme="kit"]{
+  --ink:#e9ebf1;--muted:#989eab;--cream:#202329;--line:#3a3f48;--teal:#e8722c;--amber:#ffb060;
+  --shadow:0 14px 40px #0a0c1066;color:var(--ink);background:#191b20;
+}
+body[data-theme="kit"] .paper,
+body[data-theme="kit"] .build-world,
+body[data-theme="kit"] .yard-world,
+body[data-theme="kit"] .cam-btn,
+body[data-theme="kit"] .build-part-btn,
+body[data-theme="kit"] .bottom-nav,
+body[data-theme="kit"] .top-theme,
+body[data-theme="kit"] .resource{background:#25282eee;border-color:#3a3f48;color:var(--ink)}
+body[data-theme="kit"] .cam-btn:hover{background:#2e323a}
+body[data-theme="kit"] .theme-btn.is-active,
+body[data-theme="kit"] .primary{background:linear-gradient(135deg,#e8722c,#c4551e);border-color:#e8722c;color:#fff4e8}
+body[data-theme="kit"] .dark{background:#31353e;border-color:#8a919e;color:#e9ebf1}
+body[data-theme="kit"] .yard-debug-hud{background:#1c1f24ee;border-color:#8a919e88;color:#d8dce4}
+body[data-theme="kit"] .vignette{background:radial-gradient(ellipse at 50% 30%,#e8722c14,transparent 55%),linear-gradient(0deg,#10121688,transparent 40%)}
+
+/* 玩具：蓝紫影棚 UI */
 body[data-theme="toy"]{
   --ink:#e8e6ff;--muted:#9a96c8;--cream:#1c1c30;--line:#3c3c60;--teal:#e8722c;--amber:#ffb060;
   --shadow:0 14px 40px #0a0a1866;color:var(--ink);background:#181830;
@@ -188,8 +208,19 @@ body:not([data-theme="mecha"]):not([data-theme="wasteland"]):not([data-theme="fu
 .compare-grid .delta.up{color:#3d8a6a}
 .compare-grid .delta.down{color:#e07050}
 .build-center{position:absolute;left:calc(3% + 236px);right:3%;top:115px;bottom:72px;display:flex;flex-direction:column;align-items:center;pointer-events:none}
-.build-world{flex:1;width:100%;min-height:220px;border-radius:16px;overflow:hidden;border:1px solid #fff7e499;background:#e9deca;pointer-events:auto;touch-action:none}
+.build-world{flex:1;width:100%;min-height:220px;border-radius:16px;overflow:hidden;border:1px solid #fff7e499;background:#e9deca;pointer-events:auto;touch-action:none;position:relative}
 .build-world canvas{width:100%;height:100%;display:block}
+
+/* —— 零件引线标注（装配台风签名元素） —— */
+.kit-callouts{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
+.kit-callout{position:absolute;display:flex;align-items:center;white-space:nowrap;
+  font-size:9px;font-weight:600;letter-spacing:1.6px;color:#e9ebf2;
+  text-shadow:0 1px 6px #000000d0;transform:translate(10px,-50%)}
+.kit-callout i.dot{width:5px;height:5px;border:1px solid #ffffffcc;border-radius:50%;flex:none}
+.kit-callout i.ln{display:block;width:22px;height:1px;background:#ffffffad;margin:0 6px;flex:none}
+.kit-callout.alt{transform:translate(calc(-100% - 10px),-50%)}
+.callout-btn{position:absolute;top:10px;right:12px;z-index:3;padding:4px 10px;font-size:11px}
+.callout-btn.is-active{background:var(--teal);border-color:var(--teal);color:#fff9ed}
 .build-toolbar{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:flex-start;padding:12px 16px;max-width:min(920px,94vw)}
 .build-toolbar button{padding:10px 14px;font-size:12px;gap:8px}
 .build-toolbar .primary{order:-1}

@@ -57,6 +57,35 @@ function zeroPose() {
   return {x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0};
 }
 
+/** 零件英文小注（装配展示图风格的 callout 文案）。 */
+const CALLOUT_NAMES = Object.freeze({
+  mecha_head: 'HEAD UNIT',
+  armor_torso: 'TORSO SHELL',
+  armor_shoulder: 'SHOULDER SHELL',
+  mecha_leg: 'LEG SHELL',
+  backpack_frame: 'BACKPACK FRAME',
+  weapon_rifle: 'ARM ASSEMBLY',
+  thruster_pack: 'THRUSTER',
+  wheel: 'DRIVE WHEEL',
+  drive_wheel: 'DRIVE WHEEL',
+  track_module: 'TRACK MODULE',
+  core: 'CORE PROCESSOR',
+  battery: 'POWER CELL',
+  gripper: 'GRIPPER',
+  winch_module: 'WINCH',
+  camera: 'SENSOR',
+  display: 'DISPLAY',
+  revolute_joint: 'JOINT BEARING',
+  prism_joint: 'LINEAR ACTUATOR',
+  plate: 'PLATE',
+  heavy_plate: 'ARMOR PLATE',
+  beam: 'FRAME BEAM',
+  post: 'FRAME POST',
+  hook: 'HOOK',
+  pusher: 'PUSHER',
+  bucket: 'BUCKET',
+});
+
 function indexPartDefs(partDefs) {
   const map = new Map();
   for (const d of partDefs || []) {
@@ -100,8 +129,10 @@ export class BlueprintEditorScene {
     this.previewRoot.visible = false;
     this._flashUntil = 0;
     this._hoveredPoint = null;
-    this.themeId = 'toy';
+    this.themeId = 'kit';
     this.quality = 'high';
+    this.calloutsOn = true;
+    this._calloutEls = new Map();
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(COLORS.ground);
@@ -111,6 +142,12 @@ export class BlueprintEditorScene {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.append(this.renderer.domElement);
+
+    // 零件引线标注层：参考装配展示图的「圆点 + 细线 + 英文小注」
+    this.calloutLayer = document.createElement('div');
+    this.calloutLayer.className = 'kit-callouts';
+    this.calloutLayer.setAttribute('aria-hidden', 'true');
+    container.append(this.calloutLayer);
 
     // 环境反射（PMREM 渐变贴图）：让金属/装甲件有可信反射，零外部资产
     this._envMap = buildEnvironment(this.renderer);
@@ -675,6 +712,59 @@ export class BlueprintEditorScene {
     this._bloom?.composer?.setSize(w, h);
   }
 
+  /** 开关零件引线标注。 */
+  setCallouts(on) {
+    this.calloutsOn = !!on;
+  }
+
+  /** 每帧把已装零件投影到屏幕，同步引线标注（>20 件自动关闭避免糊屏）。 */
+  _syncCallouts() {
+    const layer = this.calloutLayer;
+    if (!layer) return;
+    const show = this.calloutsOn && this.meshes.size > 0 && this.meshes.size <= 20;
+    if (!show) {
+      if (layer.childElementCount) layer.replaceChildren();
+      this._calloutEls.clear();
+      return;
+    }
+    const w = this.container.clientWidth || 1;
+    const h = this.container.clientHeight || 1;
+    const v = new THREE.Vector3();
+    const seen = new Set();
+    for (const [id, obj] of this.meshes) {
+      obj.getWorldPosition(v);
+      v.project(this.camera);
+      if (v.z > 1) continue;
+      seen.add(id);
+      let el = this._calloutEls.get(id);
+      if (!el) {
+        const partId = obj.userData?.partId || '';
+        const name = CALLOUT_NAMES[partId] || 'PART';
+        el = document.createElement('div');
+        el.className = 'kit-callout';
+        const dot = document.createElement('i');
+        dot.className = 'dot';
+        const ln = document.createElement('i');
+        ln.className = 'ln';
+        const tx = document.createElement('span');
+        tx.textContent = name;
+        el.append(dot, ln, tx);
+        this._calloutEls.set(id, el);
+      }
+      // 左半屏标注向左展开，右半屏向右，避免出画布
+      el.classList.toggle('alt', v.x < 0);
+      el.style.left = ((v.x * 0.5 + 0.5) * w).toFixed(1) + 'px';
+      el.style.top = ((-v.y * 0.5 + 0.5) * h).toFixed(1) + 'px';
+      if (el.parentNode !== layer) layer.append(el);
+    }
+    for (const [id, el] of this._calloutEls) {
+      if (!seen.has(id)) {
+        el.remove();
+        this._calloutEls.delete(id);
+      }
+    }
+  }
+
   frame(now) {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.frame);
@@ -702,6 +792,7 @@ export class BlueprintEditorScene {
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+    this._syncCallouts();
     this.last = now;
   }
 
@@ -723,6 +814,8 @@ export class BlueprintEditorScene {
     this.renderer.dispose();
     this._envMap?.dispose?.();
     this._bloom?.composer?.dispose?.();
+    this.calloutLayer?.remove();
+    this._calloutEls?.clear();
     this.renderer.domElement.remove();
   }
 }
