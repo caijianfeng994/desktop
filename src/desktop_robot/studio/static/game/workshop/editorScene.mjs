@@ -11,6 +11,7 @@ import {createSfx} from './sfx.mjs';
 import {createPartVisual, placePartVisual} from './partVisuals.mjs';
 import {damp, standardViewOrbit} from './cameraRig.mjs';
 import {getTheme, normalizeThemeId, themeForQuality} from './visualTheme.mjs';
+import {buildEnvironment, createBloomComposer} from '../renderFx.mjs';
 
 /** 与 Python PART_DEFINITIONS 对齐的 fallback 尺寸（米） */
 export const PART_SIZES = Object.freeze({
@@ -107,7 +108,13 @@ export class BlueprintEditorScene {
     this.renderer = new THREE.WebGLRenderer({antialias: true, alpha: false});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     container.append(this.renderer.domElement);
+
+    // 环境反射（PMREM 渐变贴图）：让金属/装甲件有可信反射，零外部资产
+    this._envMap = buildEnvironment(this.renderer);
+    if (this._envMap) this.scene.environment = this._envMap;
 
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
     this.camera.position.set(1.6, 1.4, 2.2);
@@ -162,6 +169,13 @@ export class BlueprintEditorScene {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
+
+    // Bloom 合成器：高画质开、低画质关（直接渲染），异常自动回退
+    this._bloom = createBloomComposer(this.renderer, this.scene, this.camera, {
+      strength: 0.5,
+      radius: 0.6,
+      threshold: 0.8,
+    });
 
     this._onPointerDown = (e) => {
       this.dragging = true;
@@ -658,6 +672,7 @@ export class BlueprintEditorScene {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this._bloom?.composer?.setSize(w, h);
   }
 
   frame(now) {
@@ -682,7 +697,11 @@ export class BlueprintEditorScene {
       this._flashUntil = 0;
       this._applySelection();
     }
-    this.renderer.render(this.scene, this.camera);
+    if (this.quality === 'high' && this._bloom?.composer) {
+      this._bloom.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
     this.last = now;
   }
 
@@ -702,6 +721,8 @@ export class BlueprintEditorScene {
       m.material?.dispose();
     }
     this.renderer.dispose();
+    this._envMap?.dispose?.();
+    this._bloom?.composer?.dispose?.();
     this.renderer.domElement.remove();
   }
 }

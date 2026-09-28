@@ -3,6 +3,7 @@
  * requestAnimationFrame → stepDrive；暴露 reset / upright。
  */
 import * as THREE from 'three';
+import {buildEnvironment, createBloomComposer} from '../renderFx.mjs';
 import {buildSimFromBlueprint, toolLink} from '../simulation/body.mjs';
 import {stepDrive} from '../simulation/drive.mjs';
 import {checkTip} from '../simulation/tip.mjs';
@@ -120,14 +121,25 @@ export class YardScene {
     this.renderer = new THREE.WebGLRenderer({antialias: true});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.append(this.renderer.domElement);
+
+    this._envMap = buildEnvironment(this.renderer);
+    if (this._envMap) this.scene.environment = this._envMap;
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 200);
     this.orbitAngle = 0.55;
     this.orbitRadius = 4.2;
     this.look = new THREE.Vector3(0, 0.4, 0);
+
+    this._bloom = createBloomComposer(this.renderer, this.scene, this.camera, {
+      strength: 0.42,
+      radius: 0.55,
+      threshold: 0.82,
+    });
 
     this.hemi = new THREE.HemisphereLight(0xfff7e5, 0x8c8977, 1.35);
     this.scene.add(this.hemi);
@@ -1258,6 +1270,7 @@ export class YardScene {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this._bloom?.composer?.setSize(w, h);
   }
 
   frame(now) {
@@ -1376,7 +1389,11 @@ export class YardScene {
     }
     this._syncBlocks();
     this._updateDebugHud();
-    this.renderer.render(this.scene, this.camera);
+    if (this.quality === 'high' && this._bloom?.composer) {
+      this._bloom.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   dispose() {
@@ -1388,6 +1405,8 @@ export class YardScene {
     this.renderer.domElement.removeEventListener('wheel', this._onWheel);
     window.removeEventListener('resize', this._onResize);
     this._clearRobot();
+    this._envMap?.dispose?.();
+    this._bloom?.composer?.dispose?.();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
