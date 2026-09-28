@@ -429,7 +429,7 @@ export class BlueprintEditorScene {
     for (const inst of this.blueprint.instances || []) {
       const size = sizeFor(inst, defs);
       const pose = poses[inst.instance_id] || zeroPose();
-      const visual = createPartVisual(inst.part_id, size, {themeId: this.themeId});
+      const visual = createPartVisual(inst.part_id, size, {themeId: this.themeId, quality: this.quality});
       placePartVisual(visual, pose, SCALE, size[1]);
       visual.userData.instanceId = inst.instance_id;
       visual.userData.partId = inst.part_id;
@@ -517,7 +517,7 @@ export class BlueprintEditorScene {
       {x: preview.x, y: preview.y, z: preview.z},
       childSize,
     );
-    const visual = createPartVisual(childPartId, childSize, {themeId: this.themeId});
+    const visual = createPartVisual(childPartId, childSize, {themeId: this.themeId, quality: this.quality});
     placePartVisual(visual, preview, SCALE, childSize[1]);
     visual.traverse((o) => {
       if (!o.isMesh || !o.material) return;

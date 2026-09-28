@@ -1128,6 +1128,7 @@ export class YardScene {
       const visual = createPartVisual(inst.part_id, size, {
         gripperOpen: this.gripperOpen,
         themeId: this.themeId,
+        quality: this.quality,
       });
       placePartVisual(visual, pose, SCALE, size[1]);
       visual.userData.partId = inst.part_id;

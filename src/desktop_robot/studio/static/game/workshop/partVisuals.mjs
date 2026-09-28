@@ -3,6 +3,7 @@
  */
 import * as THREE from 'three';
 import {materialForPart} from './materials.mjs';
+import {maybeAttachHeroModel} from './partAssets.mjs';
 
 function stdMat(info) {
   return new THREE.MeshStandardMaterial({
@@ -89,7 +90,7 @@ function paintMecha(partId, themeId) {
  * @param {{gripperOpen?: number, themeId?: string}} [opts]
  * @returns {THREE.Object3D}
  */
-export function createPartVisual(partId, size, opts = {}) {
+function createProceduralPartVisual(partId, size, opts = {}) {
   const [sx = 0.05, sy = 0.05, sz = 0.05] = size || [];
   const themeId = opts.themeId || 'warm';
   const matInfo = paintMecha(partId, themeId);
@@ -419,6 +420,16 @@ export function createPartVisual(partId, size, opts = {}) {
   root.add(box);
   root.userData.visualHalfH = sy / 2;
   return root;
+}
+
+/**
+ * 同步返回程序化外观；若该零件登记了英雄 GLB，则异步加载就绪后原位替换
+ * （失败/低画质/未登记一律保持程序化，见 partAssets.mjs 的三条回落路径）。
+ */
+export function createPartVisual(partId, size, opts = {}) {
+  const visual = createProceduralPartVisual(partId, size, opts);
+  maybeAttachHeroModel(visual, partId, {size, quality: opts.quality});
+  return visual;
 }
 
 /**
