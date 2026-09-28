@@ -258,7 +258,7 @@ function applyEngineerMechaTemplate({quiet=false}={}){
  }
  editorScene?.frameAll?.({snap:true});
  setBuildGuide('工程机甲已装好：头罩、装甲、腿架与肩枪。保存后进试验场。');
- if(!quiet)toast('已装工程机甲：奶白漆面、发光表情、橙色关节与肩炮；点「整机」看全貌');
+ if(!quiet)toast('已装工程机甲：银白壳体、发光面罩、橙色条纹；点「整机」看全貌');
  return true;
 }
 function applyQuadTemplate({quiet=false}={}){

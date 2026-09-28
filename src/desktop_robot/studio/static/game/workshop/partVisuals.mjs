@@ -1,27 +1,27 @@
 /**
- * 零件视觉网格：玩具感机器人外形（胖圆体量 / 发光表情屏 / 弹簧管线细节）。
+ * 零件视觉网格：精密机甲套件外形（银白缎面壳体 / 橙色赛车条纹 / 深炭关节）。
  * 尺寸单位米；调用方再乘 SCALE。
- * 风格基准：奶白漆面 + 橙/锈红点缀 + 深色包胶关节 + 发光表情，
- * 蓝紫影棚光下靠 clearcoat 漆面与 emissive 面部出效果。
+ * 风格基准：银白金属漆壳体 + 橙色条纹点缀 + 深炭色包胶关节与玻璃面罩 +
+ * 外露金属件（弹簧/铆钉），蓝紫影棚光下靠 clearcoat 与 emissive 出效果。
  */
 import * as THREE from 'three';
 import {maybeAttachHeroModel} from './partAssets.mjs';
 
 /* ------------------------------------------------------------------ */
-/* 玩具风强制配色（覆盖主题材质，保证机甲件不糊成同色）                     */
+/* 套件风强制配色（覆盖主题材质，保证机甲件不糊成同色）                     */
 /* ------------------------------------------------------------------ */
 
-const TOY = {
-  body: {color: 0xece3d0, roughness: 0.48, metalness: 0.05, clearcoat: 0.55, clearcoatRoughness: 0.35},
-  panel: {color: 0xcabfa8, roughness: 0.55, metalness: 0.05, clearcoat: 0.4, clearcoatRoughness: 0.4},
-  vinyl: {color: 0x3a3a40, roughness: 0.72, metalness: 0.12, clearcoat: 0.15, clearcoatRoughness: 0.5},
-  orange: {color: 0xe8722c, roughness: 0.45, metalness: 0.08, clearcoat: 0.5, clearcoatRoughness: 0.35},
-  rust: {color: 0xb0512e, roughness: 0.6, metalness: 0.15, clearcoat: 0.3, clearcoatRoughness: 0.45},
+const KIT = {
+  body: {color: 0xd9dbdf, roughness: 0.32, metalness: 0.38, clearcoat: 0.65, clearcoatRoughness: 0.22},
+  panel: {color: 0x90949c, roughness: 0.4, metalness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.3},
+  vinyl: {color: 0x26282e, roughness: 0.5, metalness: 0.32, clearcoat: 0.3, clearcoatRoughness: 0.35},
+  orange: {color: 0xe8722c, roughness: 0.36, metalness: 0.12, clearcoat: 0.55, clearcoatRoughness: 0.28},
+  rust: {color: 0x6b6f78, roughness: 0.38, metalness: 0.72, clearcoat: 0.2, clearcoatRoughness: 0.4},
   glow: {color: 0x2a2e38, roughness: 0.3, metalness: 0.2, emissive: 0x9fd8ff, emissiveIntensity: 0.0},
 };
 
-/** 漆面/包胶材质：低金属度 + clearcoat；金属件（极少）保留 Standard。 */
-function toyMat(info) {
+/** 漆面/包胶材质：低金属度 + clearcoat；金属件保留 Standard。 */
+function kitMat(info) {
   if ((info.metalness ?? 0) > 0.5) {
     return new THREE.MeshStandardMaterial({
       color: info.color,
@@ -42,11 +42,11 @@ function toyMat(info) {
   });
 }
 
-const bodyMat = () => toyMat(TOY.body);
-const panelMat = () => toyMat(TOY.panel);
-const vinylMat = () => toyMat(TOY.vinyl);
-const orangeMat = () => toyMat(TOY.orange);
-const rustMat = () => toyMat(TOY.rust);
+const bodyMat = () => kitMat(KIT.body);
+const panelMat = () => kitMat(KIT.panel);
+const vinylMat = () => kitMat(KIT.vinyl);
+const orangeMat = () => kitMat(KIT.orange);
+const rustMat = () => kitMat(KIT.rust);
 
 /** 发光材质：供眼睛/指示灯/喷口，颜色亮、靠 bloom 出光晕。 */
 function glowMat(color = 0xcfe8ff, intensity = 1.6) {
@@ -168,7 +168,7 @@ function roundedRectShape(w, h, r) {
 }
 
 /**
- * 圆胖长方体：倒角半径默认拉到最短边 30%（玩具体量），
+ * 圆胖长方体：倒角半径默认拉到最短边 30%（圆润壳体），
  * 基础形状缩小 2*bevelSize，使最终包围盒仍精确等于 (w,h,d)，
  * 不与碰撞盒、挂点、可达半径脱节。
  */
@@ -190,7 +190,7 @@ function rbox(w, h, d, r) {
   return geo;
 }
 
-/** 竖直胶囊（玩具四肢主力）。 */
+/** 竖直胶囊（四肢壳体主力）。 */
 function capsule(r, len, radialSeg = 14) {
   return new THREE.CapsuleGeometry(r, Math.max(0.001, len), 5, radialSeg);
 }
@@ -226,6 +226,16 @@ function addRivets(root, positions) {
     b.position.set(x, y, z);
     root.add(b);
   }
+}
+
+/**
+ * 橙色赛车条纹：贴在壳体表面的细长条（套件风签名细节）。
+ * @param {number} w 条宽
+ * @param {number} l 条长
+ * @returns {THREE.Mesh}
+ */
+function stripe(w, l) {
+  return new THREE.Mesh(rbox(w, l, 0.006, Math.min(w, 0.006) * 0.45), orangeMat());
 }
 
 /* ------------------------------------------------------------------ */
@@ -266,25 +276,32 @@ function createProceduralPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'mecha_head') {
-    // 横向药丸头 + 发光表情屏 + 弹簧天线 + 侧耳盘
+    // 银白壳体头 + 深色玻璃面罩（发光表情）+ 顶部橙条纹 + 侧耳盘
     const headR = sy * 0.5;
     const head = new THREE.Mesh(capsule(headR, Math.max(0.001, sx * 0.9 - headR)), bodyMat());
     const face = faceScreen(sx * 0.62, sy * 0.5, opts.face || 'happy');
     face.position.set(0, -sy * 0.02, sz * 0.44);
     const earGeo = new THREE.CylinderGeometry(sy * 0.22, sy * 0.22, sx * 0.12, 12);
-    const earL = new THREE.Mesh(earGeo, orangeMat());
-    const earR = new THREE.Mesh(earGeo, orangeMat());
+    const earL = new THREE.Mesh(earGeo, panelMat());
+    const earR = new THREE.Mesh(earGeo, panelMat());
     earL.rotation.z = Math.PI / 2;
     earR.rotation.z = Math.PI / 2;
     earL.position.set(-sx * 0.48, 0, 0);
     earR.position.set(sx * 0.48, 0, 0);
+    const earCapGeo = new THREE.CylinderGeometry(sy * 0.1, sy * 0.1, sx * 0.02, 10);
+    const earCapL = new THREE.Mesh(earCapGeo, orangeMat());
+    const earCapR = new THREE.Mesh(earCapGeo, orangeMat());
+    earCapL.rotation.z = Math.PI / 2;
+    earCapR.rotation.z = Math.PI / 2;
+    earCapL.position.set(-sx * 0.55, 0, 0);
+    earCapR.position.set(sx * 0.55, 0, 0);
     const springAnt = spring(sy * 0.06, sy * 0.34, 0.0035, 4);
     springAnt.position.set(sx * 0.22, sy * 0.62, 0);
     const tip = new THREE.Mesh(new THREE.SphereGeometry(sy * 0.09, 10, 8), glowMat(0xffb060, 1.4));
     tip.position.set(sx * 0.22, sy * 0.82, 0);
     const brow = new THREE.Mesh(rbox(sx * 0.5, sy * 0.1, sz * 0.3), orangeMat());
     brow.position.set(0, sy * 0.3, sz * 0.32);
-    root.add(head, face, earL, earR, springAnt, tip, brow);
+    root.add(head, face, earL, earR, earCapL, earCapR, springAnt, tip, brow);
     root.userData.visualHalfH = sy / 2;
     return root;
   }
@@ -317,7 +334,12 @@ function createProceduralPartVisual(partId, size, opts = {}) {
       [-sx * 0.28, sy * 0.3, sz * 0.47],
       [sx * 0.28, sy * 0.3, sz * 0.47],
     ]);
-    root.add(belly, bib, bellyBtn, collar, strapL, strapR, belt);
+    // 胸口双赛车条纹
+    const stripeL = stripe(sx * 0.07, sy * 0.42);
+    const stripeR = stripe(sx * 0.07, sy * 0.42);
+    stripeL.position.set(-sx * 0.16, sy * 0.06, sz * 0.44);
+    stripeR.position.set(sx * 0.16, sy * 0.06, sz * 0.44);
+    root.add(belly, bib, bellyBtn, collar, strapL, strapR, belt, stripeL, stripeR);
     root.userData.visualHalfH = sy / 2;
     return root;
   }
@@ -351,12 +373,15 @@ function createProceduralPartVisual(partId, size, opts = {}) {
     knee.position.y = -sy * 0.08;
     const shin = new THREE.Mesh(capsule(sx * 0.26, sy * 0.28), bodyMat());
     shin.position.y = -sy * 0.26;
-    const foot = new THREE.Mesh(new THREE.SphereGeometry(sx * 0.42, 14, 10), bodyMat());
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(sx * 0.42, 14, 10), vinylMat());
     foot.scale.set(1.15, 0.5, 1.5);
     foot.position.set(0, -sy * 0.44, sz * 0.12);
     const kneeSpring = spring(sx * 0.14, sy * 0.2, 0.004, 4);
     kneeSpring.position.set(0, -sy * 0.06, -sz * 0.26);
-    root.add(hip, thigh, knee, shin, foot, kneeSpring);
+    // 大腿外侧橙色条纹
+    const legStripe = stripe(sx * 0.1, sy * 0.34);
+    legStripe.position.set(0, sy * 0.16, sz * 0.32);
+    root.add(hip, thigh, knee, shin, foot, kneeSpring, legStripe);
     root.userData.visualHalfH = sy / 2;
     return root;
   }
@@ -387,7 +412,7 @@ function createProceduralPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'weapon_rifle') {
-    // 玩具水枪感：圆胖枪身 + 橙色枪口环 + 圆握把
+    // 圆胖枪身 + 橙色枪口环 + 圆握把
     const receiver = new THREE.Mesh(capsule(sy * 0.3, sz * 0.55), bodyMat());
     receiver.rotation.x = Math.PI / 2;
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(sy * 0.14, sy * 0.18, sz * 0.5, 12), vinylMat());
@@ -600,7 +625,7 @@ export function placePartVisual(visual, pose, scale, sizeY) {
   });
 }
 
-/** 供测试：某 partId 期望的最少子 Mesh 数（玩具外形验收）。 */
+/** 供测试：某 partId 期望的最少子 Mesh 数（套件外形验收）。 */
 export function expectedMeshCount(partId) {
   const map = {
     mecha_head: 7,
