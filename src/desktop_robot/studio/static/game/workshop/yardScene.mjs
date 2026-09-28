@@ -1324,6 +1324,7 @@ export class YardScene {
       if (mesh.userData.isWheel) mesh.rotation.x = this._wheelSpin;
     }
 
+    const turning = Math.abs(this.input.turn || 0) > 0.1;
     if (this.cameraMode === 'cockpit') {
       const eyeH = (groundY + 0.13) * SCALE;
       const yaw = this.drive.yaw;
@@ -1335,7 +1336,7 @@ export class YardScene {
       const eyeZ = pz + fz * 0.08 * SCALE;
       const lookX = px + fx * 2.2 * SCALE;
       const lookZ = pz + fz * 2.2 * SCALE;
-      const lambda = this.reduceMotion ? 4 : 14;
+      const lambda = this.reduceMotion ? 6 : turning ? 24 : 14;
       this.camera.position.x = damp(this.camera.position.x, eyeX, lambda, dt);
       this.camera.position.y = damp(this.camera.position.y, eyeH, lambda, dt);
       this.camera.position.z = damp(this.camera.position.z, eyeZ, lambda, dt);
@@ -1374,7 +1375,13 @@ export class YardScene {
         targetRadius = Math.max(1.8, this.orbitRadius * 0.55);
         targetHeight = (0.7 + groundY) * SCALE * 0.4;
       }
-      this._camAngle = dampAngle(this._camAngle, targetAngle, this.reduceMotion ? 2 : 6, dt);
+      // 转弯时相机主动收紧跟随，避免机体转过去了视角还拖在后面
+      const camYawLambda = this.reduceMotion
+        ? 2
+        : turning && (this.cameraMode === 'follow' || this.cameraMode === 'tool')
+          ? 14
+          : 6;
+      this._camAngle = dampAngle(this._camAngle, targetAngle, camYawLambda, dt);
       this._camRadius = damp(this._camRadius, targetRadius, lambda, dt);
       this._camHeight = damp(this._camHeight, targetHeight, lambda, dt);
 

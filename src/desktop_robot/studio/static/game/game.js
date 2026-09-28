@@ -833,6 +833,7 @@ async function ensureYardScene(){
    if($('#yard-quality-low')?.checked)yardScene.setQuality?.('low');
    yardScene.reset();
    yardScene.resumeFollow?.();
+   window.__yardScene=yardScene;// 调试/自动化冒烟钩子
    syncYardCamButtons('follow');
    syncYardChallengeUi();
    startYardDiagnostics();
