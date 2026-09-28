@@ -17,6 +17,8 @@ from desktop_robot.game.missions_open import (
     CHALLENGE,
     CHALLENGES_BY_ID,
     OPEN_CHALLENGES,
+    CHAPTERS,
+    challenge_status,
     evaluate_drawer_result,
 )
 from desktop_robot.game.parts import PART_DEFINITIONS
@@ -313,6 +315,8 @@ def snapshot(state: dict) -> dict:
         "part_defs": PART_DEFS,
         "missions": MISSIONS,
         "open_challenges": list(OPEN_CHALLENGES),
+        "chapters": list(CHAPTERS),
+        "challenge_status": challenge_status(state.get("completed_challenges")),
         "inventory": state.get("inventory") or {"parts": {}, "schematics": []},
         "owned_freeform": list(state.get("owned_freeform") or []),
         "world": {"size": 9, "home": HOME, "blocked": BLOCKED, "low": LOW_OBSTACLES},

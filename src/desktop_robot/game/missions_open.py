@@ -1,4 +1,8 @@
-"""开放挑战定义与结果判定（抽屉取物、跨桌缝救援）。"""
+"""开放挑战定义与结果判定（抽屉取物、跨桌缝救援、书架救援）。
+
+阶段4 闯关体系：把开放挑战组织成 3 章 × 3 关的节点图，每关带章节、顺序与前置。
+解锁规则（见 ``challenge_status``）：章内线性解锁，章节首关以前一章末关为前置。
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,9 @@ CHALLENGE = dict(
     reward=150,
     xp=60,
     block_id=DRAWER_BLOCK_ID,
+    chapter=1,
+    order=1,
+    prereq=[],
 )
 
 DESK_GAP_CHALLENGE = dict(
@@ -24,6 +31,9 @@ DESK_GAP_CHALLENGE = dict(
     reward=220,
     xp=90,
     block_id=DESK_GAP_BLOCK_ID,
+    chapter=2,
+    order=1,
+    prereq=["drawer-drag"],
 )
 
 BOOKSHELF_CHALLENGE = dict(
@@ -38,13 +48,52 @@ BOOKSHELF_CHALLENGE = dict(
         {"type": "part", "part_id": "thruster_pack", "qty": 1},
         {"type": "schematic", "id": "schematic-winch", "name": "绞盘模块设计图", "unlocks": "winch_module"},
     ],
+    chapter=3,
+    order=1,
+    prereq=["desk-gap-wide"],
 )
 
-OPEN_CHALLENGES = [CHALLENGE, DESK_GAP_CHALLENGE, BOOKSHELF_CHALLENGE]
+# 同机制变体节点：复用原方块与目标判定，仅标题/奖励/章节顺序不同，用于填满 3×3 地图。
+_VARIANTS = [
+    dict(id="drawer-precise", title="抽屉·稳准", subtitle="慢即是快", description="同样把方块搬进接收区，但结构更紧凑会更稳。", reward=180, xp=75, block_id=DRAWER_BLOCK_ID, chapter=1, order=2, prereq=["drawer-block"]),
+    dict(id="drawer-drag", title="抽屉·巧劲", subtitle="拖，比夹更省力", description="用拖拽而非夹取完成搬运，体会不同工具的手感。", reward=200, xp=85, block_id=DRAWER_BLOCK_ID, chapter=1, order=3, prereq=["drawer-precise"]),
+    dict(id="desk-gap-long", title="桌缝·长臂", subtitle="把臂伸到最远", description="用更长的臂或加高机身够取对岸方块。", reward=260, xp=105, block_id=DESK_GAP_BLOCK_ID, chapter=2, order=2, prereq=["desk-gap-rescue"]),
+    dict(id="desk-gap-wide", title="桌缝·绕行", subtitle="把底盘加宽再越界", description="加宽底盘、降低重心，从桌缝上方稳稳越界。", reward=280, xp=115, block_id=DESK_GAP_BLOCK_ID, chapter=2, order=3, prereq=["desk-gap-long"]),
+    dict(id="bookshelf-stealth", title="书架·潜行", subtitle="借掩体绕过巡逻", description="不硬碰敌机，用掩体与绞盘静默完成救援。", reward=360, xp=160, block_id=BOOKSHELF_BLOCK_ID, chapter=3, order=2, prereq=["bookshelf-rescue"]),
+    dict(id="bookshelf-assault", title="书架·强攻", subtitle="清场后登高抢运", description="用火力清场，再短时推进登高把目标抢运回接收区。", reward=400, xp=180, block_id=BOOKSHELF_BLOCK_ID, chapter=3, order=3, prereq=["bookshelf-stealth"]),
+]
+
+OPEN_CHALLENGES = [CHALLENGE, DESK_GAP_CHALLENGE, BOOKSHELF_CHALLENGE, *_VARIANTS]
 CHALLENGES_BY_ID = {c["id"]: c for c in OPEN_CHALLENGES}
+
+CHAPTERS = [
+    dict(id="ch1", title="桌面初探", blurb="熟悉夹、推、拖三种基本搬运。", chapter=1),
+    dict(id="ch2", title="跨越边界", blurb="学会用长臂够远、底盘绕行与抬高。", chapter=2),
+    dict(id="ch3", title="高处与威胁", blurb="面对倾斜书架、巡逻敌机与登高技术。", chapter=3),
+]
 
 # 方块速度阈值（m/s）：≈静止
 _SPEED_EPS = 0.05
+
+
+def challenge_status(completed: list | None) -> dict[str, str]:
+    """返回 {challenge_id: 'done' | 'available' | 'locked'}。
+
+    - done：已在 completed 中；
+    - available：未完成且全部 prereq 已完成；
+    - locked：否则。
+    """
+    done = set(completed or [])
+    out = {}
+    for c in OPEN_CHALLENGES:
+        cid = c["id"]
+        if cid in done:
+            out[cid] = "done"
+        elif all(p in done for p in c.get("prereq", [])):
+            out[cid] = "available"
+        else:
+            out[cid] = "locked"
+    return out
 
 
 def evaluate_drawer_result(payload: dict | None) -> dict:

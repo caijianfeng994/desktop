@@ -193,3 +193,29 @@ body:not([data-theme="mecha"]):not([data-theme="wasteland"]):not([data-theme="fu
  .top-theme .cam-btn{padding:4px 7px;font-size:10px}
 }
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+
+/* 阶段4 闯关地图 */
+.chapter-map-wrap{position:absolute;left:7%;right:7%;bottom:40px;top:auto}
+.chapter-map-wrap .section-title.tight{position:relative;left:auto;top:auto;margin-bottom:10px}
+.chapter-map-wrap .section-title.tight h2{font-size:20px;margin:6px 0 4px}
+.chapter-map-wrap .section-title.tight p{font-size:11px}
+.chapter-map{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.chapter-col{background:linear-gradient(135deg,#fffaf0ee,#f1e7d2ee);border:1px solid #fff8eccc;border-radius:16px;padding:14px;box-shadow:var(--shadow)}
+.chapter-col.all-done{border-color:#cfe0c2}
+.chapter-head{margin-bottom:12px}
+.chapter-head .chapter-no{font-size:9px;letter-spacing:2px;color:#a38e6d}
+.chapter-head h3{font-size:15px;margin:5px 0 4px}
+.chapter-head p{font-size:10px;line-height:1.6;min-height:30px}
+.chapter-nodes{display:grid;gap:8px}
+.chapter-node{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);background:#f0e7d5;border-radius:11px;padding:11px 12px;transition:.18s;color:var(--ink)}
+.chapter-node:hover:not(:disabled){transform:translateY(-1px);border-color:#baaa86}
+.chapter-node .node-ico{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:#e1e8dc;color:var(--teal);font-size:12px;flex:none}
+.chapter-node .node-title{font-size:12px;font-weight:650;flex:1}
+.chapter-node .node-reward{font-size:10px;color:#a27735;white-space:nowrap}
+.chapter-node.available{border-color:#e4b85c;background:#fff0cb;box-shadow:0 0 0 2px #ebc57130}
+.chapter-node.available .node-ico{background:var(--teal);color:#fff9ed}
+.chapter-node.locked{opacity:.55}
+.chapter-node.locked .node-ico{background:#e0d7c6;color:#9d8e74}
+.chapter-node.done .node-ico{background:#5b9280;color:#fff9ed}
+.chapter-node.done .node-reward{color:#5b9280}
+@media(max-width:900px){.chapter-map{grid-template-columns:1fr}.chapter-map-wrap{position:relative;left:auto;right:auto;margin-top:20px}.chapter-head p{min-height:auto}}
