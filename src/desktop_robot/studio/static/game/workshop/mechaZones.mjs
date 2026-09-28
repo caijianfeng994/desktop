@@ -14,7 +14,7 @@ export const MECHA_ZONES = Object.freeze([
   'weapon',
 ]);
 
-const PART_ZONE = Object.freeze({
+export const PART_ZONE = Object.freeze({
   core: 'core',
   mecha_head: 'head',
   armor_torso: 'torso',
@@ -31,6 +31,11 @@ const PART_ZONE = Object.freeze({
   prism_joint: 'arm',
   beam: 'arm',
   gripper: 'arm',
+  pusher: 'arm',
+  hook: 'arm',
+  battery: 'backpack',
+  camera: 'head',
+  display: 'head',
 });
 
 const SLOT_ZONE = Object.freeze({

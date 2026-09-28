@@ -41,34 +41,19 @@
   <div>
    <span class="eyebrow">FREEFORM</span>
    <h1>自由装配</h1>
-   <p id="build-guide" class="build-guide">左选零件，中间拼装预览，右侧看质量与可达。保存后进试验场。</p>
+   <p id="build-guide" class="build-guide">选槽位 → 点零件 → 中间拼装预览 → 右侧看质量与可达。保存后进试验场。</p>
   </div>
-  <p id="build-status" class="build-status" aria-live="polite">尚未载入作品</p>
+  <div class="hangar-banner-right">
+   <div id="hangar-topstats" class="hangar-topstats"></div>
+   <p id="build-status" class="build-status" aria-live="polite">尚未载入作品</p>
+  </div>
  </div>
  <div class="hangar-layout">
-  <aside class="build-parts paper hangar-left"><div class="panel-heading"><h2>零件库</h2><button type="button" class="text-button" id="build-toggle-parts" aria-expanded="true">收起</button></div>
-  <p id="build-pick-hint" class="build-pick-hint tip">点零件 → 再点画布连接点</p>
-  <div id="build-part-palette" class="build-palette">
-   <button type="button" class="build-part-btn" data-build-part="mecha_head">头罩</button>
-   <button type="button" class="build-part-btn" data-build-part="armor_torso">躯干甲</button>
-   <button type="button" class="build-part-btn" data-build-part="armor_shoulder">肩甲</button>
-   <button type="button" class="build-part-btn" data-build-part="mecha_leg">腿架</button>
-   <button type="button" class="build-part-btn" data-build-part="backpack_frame">背包架</button>
-   <button type="button" class="build-part-btn" data-build-part="weapon_rifle">工程步枪</button>
-   <button type="button" class="build-part-btn" data-build-part="thruster_pack">推进背包</button>
-   <button type="button" class="build-part-btn" data-build-part="winch_module">绞盘</button>
-   <button type="button" class="build-part-btn" data-build-part="heavy_plate">重甲板</button>
-   <button type="button" class="build-part-btn" data-build-part="wheel">单轮</button>
-   <button type="button" class="build-part-btn" data-build-part="plate">板件</button>
-   <button type="button" class="build-part-btn" data-build-part="beam">连接杆</button>
-   <button type="button" class="build-part-btn" data-build-part="post">立柱</button>
-   <button type="button" class="build-part-btn" data-build-part="revolute_joint">转动关节</button>
-   <button type="button" class="build-part-btn" data-build-part="prism_joint">伸缩模块</button>
-   <button type="button" class="build-part-btn" data-build-part="gripper">夹爪</button>
-   <button type="button" class="build-part-btn" data-build-part="pusher">推板</button>
-   <button type="button" class="build-part-btn" data-build-part="hook">钩子</button>
-   <button type="button" class="build-part-btn" data-build-part="battery">电池配重</button>
-  </div><div id="build-params" class="build-params"><p class="tip">选中零件后可调尺寸参数</p></div>
+  <aside class="build-parts paper hangar-left"><div class="panel-heading"><h2>零件库</h2><span id="build-catalog-count" class="status-tag">0</span><button type="button" class="text-button" id="build-toggle-parts" aria-expanded="true">收起</button></div>
+  <p id="build-pick-hint" class="build-pick-hint tip">选槽位 → 点零件 → 再点画布连接点</p>
+  <div id="build-slot-tabs" class="slot-tabs"></div>
+  <div id="build-part-palette" class="build-palette"></div>
+  <div id="build-params" class="build-params"><p class="tip">选中零件后可调尺寸参数</p></div>
   <details class="build-advanced">
    <summary>高级：控制绑定与组件</summary>
    <div id="build-bindings" class="build-bindings"><p class="tip">控制绑定：选中零件后点动作按钮</p></div>
@@ -97,6 +82,7 @@
   <aside class="hangar-stats paper" id="hangar-stats" aria-live="polite">
    <span class="eyebrow">结构数据</span>
    <div id="hangar-metrics" class="hangar-metrics"><p class="tip">装上零件后显示质量、可达与倾覆风险</p></div>
+   <div id="hangar-compare" class="hangar-compare"></div>
    <p class="tip">结构决定外形：换头罩/装甲/腿架后轮廓会变。试验场可切跟随 / 驾驶舱。</p>
   </aside>
  </div>

@@ -10,7 +10,7 @@ import {extractComponent, instantiateComponent} from './editor/components.mjs';
 import {findNavControl} from './nav.mjs';
 import {blueprintHasTool, formatBuildStatus, shouldApplySaveResponse, shouldSyncFromServer} from './buildDraft.mjs';
 import {formatHangarMetricsHtml, hangarMetrics} from './editor/hangarMetrics.mjs';
-import {cockpitViewHint, groupInstancesByZone} from './workshop/mechaZones.mjs';
+import {cockpitViewHint, groupInstancesByZone, PART_ZONE} from './workshop/mechaZones.mjs';
 
 const FREEFORM_PARTS = [
   'wheel', 'plate', 'beam', 'post', 'revolute_joint', 'prism_joint',
@@ -51,6 +51,16 @@ let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navi
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
 let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
 let pendingAttach=null; // {parentInstanceId, pointId, partId}
+let buildSlotTab='head'; // 机库左栏当前槽位 tab
+const BUILD_SLOT_TABS=[
+  {zone:'head',label:'头'},
+  {zone:'torso',label:'躯干'},
+  {zone:'shoulder_l',label:'肩'},
+  {zone:'chassis',label:'底盘'},
+  {zone:'arm',label:'臂'},
+  {zone:'backpack',label:'背包'},
+  {zone:'weapon',label:'武器'},
+];
 let buildDirty=false,buildSaving=false,buildSaveFailed=false,pendingComponent=null;
 let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0,fire:0,thrust:0,winch:0},yardChallengeSubmitting=false;
 let yardDiagTimer=null;
@@ -251,6 +261,32 @@ function applyQuadTemplate({quiet=false}={}){
  if(!quiet)toast('已装上四轮+机械臂，记得保存后再试跑');
  return true;
 }
+function renderBuildPalette(){
+ const tabsWrap=$('#build-slot-tabs'); if(!tabsWrap)return;
+ const groups={};
+ for(const id of FREEFORM_PARTS){
+  const z=PART_ZONE[id]||'配件';
+  (groups[z]||(groups[z]=[])).push(id);
+ }
+ const tabs=BUILD_SLOT_TABS.filter(t=>groups[t.zone]?.length);
+ if(groups['配件']?.length)tabs.push({zone:'配件',label:'配件'});
+ if(!groups[buildSlotTab]?.length)buildSlotTab=tabs[0]?.zone||'head';
+ tabsWrap.innerHTML=tabs.map(t=>`<button type="button" class="slot-tab${t.zone===buildSlotTab?' active':''}" data-slot="${esc(t.zone)}">${esc(t.label)}<small>${groups[t.zone].length}</small></button>`).join('');
+ const pal=$('#build-part-palette'); if(!pal)return;
+ const defs=state?.part_defs||[];
+ const nameOf=id=>defs.find(p=>p.id===id)?.name||id;
+ const catOf=id=>defs.find(p=>p.id===id)?.category||'';
+ const iconOf=id=>defs.find(p=>p.id===id)?.icon||'parts';
+ const equipped=new Set((buildBp?.instances||[]).map(i=>i.part_id));
+ pal.innerHTML=(groups[buildSlotTab]||[]).map(id=>`
+  <button type="button" class="build-part-btn${pendingBuildPart===id?' active':''}${equipped.has(id)?' equipped':''}" data-build-part="${esc(id)}">
+   <i class="part-symbol">${icon(iconOf(id))}</i>
+   <strong>${esc(nameOf(id))}</strong>
+   <small>${esc(catOf(id))}</small>
+   ${equipped.has(id)?'<span class="part-check">已装</span>':''}
+  </button>`).join('')||'<p class="tip">此槽位暂无可用零件</p>';
+ const count=$('#build-catalog-count'); if(count)count.textContent=`目录 ${FREEFORM_PARTS.length}`;
+}
 function updateBuildChrome(){
  $$('.build-part-btn').forEach(b=>b.classList.toggle('active',b.dataset.buildPart===pendingBuildPart));
  const undo=$('#build-undo'),redo=$('#build-redo');
@@ -289,10 +325,12 @@ function updateBuildChrome(){
  else if(buildDirty)setBuildGuide('有未保存改动。保存后进试验场试跑。');
  else if(!blueprintHasTool(buildBp,state?.part_defs||[]))setBuildGuide('还缺夹爪/推板/钩子，装上才能进试验场抓东西。');
  else setBuildGuide('可以进试验场试跑了。失败就回编辑再改。');
+ renderBuildPalette();
  renderBuildParams();
  renderBuildBindings();
  renderComponentLibrary();
  renderHangarMetrics();
+ renderHangarTopStats();
  editorScene?.setPendingPart?.(pendingBuildPart);
 }
 function renderHangarMetrics(){
@@ -305,6 +343,44 @@ function renderHangarMetrics(){
  el.innerHTML=formatHangarMetricsHtml(m)+
   (zoneLine?`<p class="tip">区域覆盖 ${esc(zoneLine)}</p>`:'')+
   (view?`<p class="tip${view.ok?'':' is-warn'}">${esc(view.reason)}</p>`:'');
+ renderHangarCompare(m);
+}
+function renderHangarCompare(cur){
+ const el=$('#hangar-compare'); if(!el)return;
+ if(!cur||!buildBp?.instances?.length){el.innerHTML='';return;}
+ const defs=state?.part_defs||[];
+ const ref=hangarMetrics(buildEngineerMechaTemplate({id:'ref',name:'工程机甲参考'}),defs);
+ const row=(label,curV,refV,unit)=>{
+  const d=curV-refV;
+  const arrow=d>0.0005?'▲':(d<-0.0005?'▼':'＝');
+  const cls=d>0.0005?'up':(d<-0.0005?'down':'');
+  return `<div class="ch">${label}</div><div class="cur">${curV.toFixed(2)}${unit}</div><div class="ref">${refV.toFixed(2)}${unit}</div><div class="delta ${cls}">${arrow}${Math.abs(d).toFixed(2)}${unit}</div>`;
+ };
+ el.innerHTML=`<h3>对照 · 工程机甲参考</h3>
+  <div class="compare-grid">
+   <div class="ch">指标</div><div class="ch">当前</div><div class="ch">参考</div><div class="ch">差值</div>
+   ${row('质量',cur.mass,ref.mass,'kg')}
+   ${row('可达',cur.reach,ref.reach,'m')}
+   ${row('轮距',cur.width,ref.width,'m')}
+   ${row('倾覆裕度',cur.tipMargin,ref.tipMargin,'m')}
+  </div>
+  <p class="tip">绿升红降：相对标准工程机甲，你的改装偏什么方向。</p>`;
+}
+function renderHangarTopStats(){
+ const el=$('#hangar-topstats'); if(!el)return;
+ const defs=state?.part_defs||[];
+ const m=hangarMetrics(buildBp,defs);
+ // 机库内部按质量折算功耗估算（part_defs 序列化未带 power_w，且与装配态 parts 的 id 体系不同）
+ const used=(buildBp?.instances||[]).reduce((s,i)=>{
+  const d=defs.find(p=>p.id===i.part_id);
+  return s+(d?(d.mass_kg||0)*3.2:0);
+ },0);
+ const cap=state?.capacity||12;
+ const over=used>cap*0.8;
+ el.innerHTML=`
+  <div class="topstat"><b>${m.mass.toFixed(2)}</b><span>总重 KG</span></div>
+  <div class="topstat"><b class="${over?'is-warn':''}">${used.toFixed(1)}<small>/${cap}</small></b><span>供电估 W</span></div>
+  <div class="topstat"><b>${m.parts}</b><span>零件数</span></div>`;
 }
 function renderBuildBindings(){
  const panel=$('#build-bindings');
@@ -516,6 +592,12 @@ async function saveBuildBlueprint({quiet=false}={}){
  updateBuildChrome();
  return true;
 }
+$('#build-slot-tabs')?.addEventListener('click',e=>{
+ const b=e.target.closest('[data-slot]');
+ if(!b)return;
+ buildSlotTab=b.dataset.slot;
+ renderBuildPalette();
+});
 $('#build-part-palette')?.addEventListener('click',e=>{
  const btn=e.target.closest('[data-build-part]');
  if(!btn)return;
