@@ -10,6 +10,27 @@ def action(store, kind, **kwargs):
     return store.act(dict(action=kind, revision=store.get()["revision"], **kwargs))
 
 
+def _add_gripper_to_active_blueprint(store):
+    """阶段5 装配契约：drawer-block 要求蓝图含 gripper。测试用默认蓝图不含，这里注入一个实例。"""
+    import json
+
+    with store.connect() as db:
+        raw = json.loads(db.execute("SELECT state FROM game WHERE id=1").fetchone()[0])
+        bp_id = raw.get("active_blueprint_id")
+        for bp in raw.get("blueprints", []):
+            if bp.get("id") == bp_id:
+                bp.setdefault("instances", []).append(
+                    {
+                        "instance_id": "gripper-test-1",
+                        "part_id": "gripper",
+                        "local_pose": {"x": 0, "y": 0, "z": 0, "rx": 0, "ry": 0, "rz": 0},
+                    }
+                )
+        db.execute(
+            "UPDATE game SET state=? WHERE id=1", (json.dumps(raw, ensure_ascii=False),)
+        )
+
+
 def test_evaluate_drawer_ok_and_fail_cases():
     ok = evaluate_drawer_result(
         {"block_id": DRAWER_BLOCK_ID, "region": "receive", "speed": 0.02}
@@ -50,6 +71,7 @@ def test_start_and_submit_awards_once(tmp_path):
     coins0 = snap["coins"]
     xp0 = snap["xp"]
 
+    _add_gripper_to_active_blueprint(store)
     state, _ = action(store, "start_challenge", mission="drawer-block")
     ch = state["challenge"]
     assert ch["id"] == CHALLENGE["id"]
@@ -100,6 +122,7 @@ def test_submit_does_not_require_camera_or_arm(tmp_path):
     run_id = state["challenge"]["run_id"]
     assert "camera" not in state["equipped"]
     assert not {"arm", "arm_left"}.intersection(state["equipped"])
+    _add_gripper_to_active_blueprint(store)
 
     state, _ = action(
         store,
@@ -131,6 +154,7 @@ def test_submit_rejects_mismatched_run_id(tmp_path):
 
 def test_submit_rejects_mismatched_blueprint_id(tmp_path):
     store = GameStore(tmp_path)
+    _add_gripper_to_active_blueprint(store)
     state, _ = action(store, "start_challenge", mission="drawer-block")
     run_id = state["challenge"]["run_id"]
     with store.connect() as db:

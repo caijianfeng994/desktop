@@ -501,6 +501,32 @@ def apply_action(state: dict, payload: dict) -> str:
         )
         if not result["ok"]:
             raise GameError(result["reason"])
+        # 阶段5 装配契约：校验蓝图是否含必需零件
+        constraints = challenge_def.get("constraints") or {}
+        require_parts = constraints.get("require_parts") or []
+        if require_parts:
+            bp = _active_blueprint_raw(state) or {}
+            inst_ids = [i.get("part_id") for i in bp.get("instances", [])]
+            missing = [p for p in require_parts if p not in inst_ids]
+            if missing:
+                raise GameError(
+                    "装配不满足挑战约束：缺少必需零件（"
+                    + "、".join(missing)
+                    + "）。回编辑补上再提交。"
+                )
+        # 阶段5 多档结算：根据用时评星（跑通≠满分）
+        par = float(challenge_def.get("par_seconds") or 90)
+        stars = 1
+        elapsed_raw = payload.get("elapsed")
+        if elapsed_raw is not None:
+            try:
+                elapsed = float(elapsed_raw)
+                stars = 3 if elapsed <= par else (2 if elapsed <= par * 1.6 else 1)
+            except (TypeError, ValueError):
+                stars = 1
+        stars = max(1, min(3, stars))
+        best = state.setdefault("challenge_stars", {})
+        best[challenge_def["id"]] = max(int(best.get(challenge_def["id"], 0)), stars)
         completed = state.setdefault("completed_challenges", [])
         first = challenge_def["id"] not in completed
         if first:
@@ -511,9 +537,9 @@ def apply_action(state: dict, payload: dict) -> str:
             loot_txt = ("；掉落：" + "、".join(loot_notes)) if loot_notes else ""
             return (
                 f"挑战完成！获得 {challenge_def['reward']} 零件币和 "
-                f"{challenge_def['xp']} 默契{loot_txt}。"
+                f"{challenge_def['xp']} 默契{loot_txt}（{stars}★）。"
             )
-        return "再次完成挑战！首次奖励已经领取，这次留下新的练习。"
+        return f"再次完成挑战！本次 {stars}★（最佳 {best[challenge_def['id']]}★），首次奖励已领取。"
     if action == "save_component":
         raw = payload.get("component")
         if not isinstance(raw, dict) or not raw.get("id") or not raw.get("instances"):

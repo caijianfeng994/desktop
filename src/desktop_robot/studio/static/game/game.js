@@ -900,11 +900,12 @@ function syncYardChallengeUi(){
  }
 }
 
-function offerChallengeSuccess(first,challenge){
+function offerChallengeSuccess(first,challenge,stars){
  const reward=first?(challenge?.reward??150):0;
  const xp=first?(challenge?.xp??60):0;
  const title=challenge?.title||'开放挑战';
- showModal(`<div class="success-mark">${icon('star')}</div><span class="eyebrow" style="justify-content:center;margin-top:15px">CHALLENGE</span><h2 style="text-align:center">${first?`${esc(title)}，完成了。`:'又一次稳稳送达。'}</h2><p style="text-align:center">结构决定解法——愿意的话，回编辑再改一版。</p><div class="reward-summary"><div><strong>+${reward}</strong><small>零件币${first?'':' · 首次奖励已领取'}</small></div><div><strong>+${xp}</strong><small>伙伴默契</small></div></div><div class="dialog-actions"><button class="dark" id="challenge-edit">回编辑</button><button class="primary" id="challenge-ok">继续试验</button></div>`);
+ const starsHtml=stars?`<div class="challenge-stars">${'★'.repeat(stars)}<span class="dim">${'★'.repeat(3-stars)}</span></div>`:'';
+ showModal(`<div class="success-mark">${icon('star')}</div><span class="eyebrow" style="justify-content:center;margin-top:15px">CHALLENGE</span><h2 style="text-align:center">${first?`${esc(title)}，完成了。`:'又一次稳稳送达。'}</h2>${starsHtml}<p style="text-align:center">结构决定解法——愿意的话，回编辑再改一版。</p><div class="reward-summary"><div><strong>+${reward}</strong><small>零件币${first?'':' · 首次奖励已领取'}</small></div><div><strong>+${xp}</strong><small>伙伴默契</small></div></div><div class="dialog-actions"><button class="dark" id="challenge-edit">回编辑</button><button class="primary" id="challenge-ok">继续试验</button></div>`);
  $('#challenge-ok').onclick=()=>modal.close();
  $('#challenge-edit').onclick=()=>{modal.close();navigate('build')};
 }
@@ -925,10 +926,15 @@ async function submitYardChallenge(payload){
   block_id:status.block_id,
   region:'receive',
   speed:status.speed,
+  elapsed:_challengeStart?Math.round((Date.now()-_challengeStart)/100)/10:null,
  },true);
  yardChallengeSubmitting=false;
- if(data)offerChallengeSuccess(first,challenge);
+ if(data)offerChallengeSuccess(first,challenge,challengeStars(data));
 }
+
+// 从后端返回文案里提取星级（"N★"），无则返回 null
+function challengeStars(text){const m=String(text||'').match(/(\d)★/);return m?+m[1]:null;}
+let _challengeStart=0;
 
 async function startYardChallenge(missionId){
  if(!state)return;
@@ -940,6 +946,7 @@ async function startYardChallenge(missionId){
  }
  const data=await act('start_challenge',{mission:missionId});
  if(!data)return;
+ _challengeStart=Date.now();
  yardScene?.setChallengeMode(true,missionId);
  yardScene?.reset();
  syncYardChallengeUi();

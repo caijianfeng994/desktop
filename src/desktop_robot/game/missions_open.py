@@ -66,6 +66,18 @@ _VARIANTS = [
 OPEN_CHALLENGES = [CHALLENGE, DESK_GAP_CHALLENGE, BOOKSHELF_CHALLENGE, *_VARIANTS]
 CHALLENGES_BY_ID = {c["id"]: c for c in OPEN_CHALLENGES}
 
+# 阶段5 装配契约：按章节给约束与达标用时（par）。
+# require_parts 为自由装配零件 id，提交时蓝图必须包含；par_seconds 用于多档结算星级。
+_CHAPTER_CONSTRAINTS = {
+    1: {"require_parts": ["gripper"], "par_seconds": 90},
+    2: {"require_parts": ["gripper", "wheel"], "par_seconds": 120},
+    3: {"require_parts": ["gripper"], "par_seconds": 150},
+}
+for _c in OPEN_CHALLENGES:
+    _cc = _CHAPTER_CONSTRAINTS.get(_c["chapter"], {})
+    _c.setdefault("constraints", {"require_parts": list(_cc.get("require_parts", [])), "par_seconds": _cc.get("par_seconds", 90)})
+    _c.setdefault("par_seconds", _cc.get("par_seconds", 90))
+
 CHAPTERS = [
     dict(id="ch1", title="桌面初探", blurb="熟悉夹、推、拖三种基本搬运。", chapter=1),
     dict(id="ch2", title="跨越边界", blurb="学会用长臂够远、底盘绕行与抬高。", chapter=2),

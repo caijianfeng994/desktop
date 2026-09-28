@@ -207,7 +207,8 @@ body:not([data-theme="mecha"]):not([data-theme="wasteland"]):not([data-theme="fu
 .chapter-head h3{font-size:15px;margin:5px 0 4px}
 .chapter-head p{font-size:10px;line-height:1.6;min-height:30px}
 .chapter-nodes{display:grid;gap:8px}
-.chapter-node{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);background:#f0e7d5;border-radius:11px;padding:11px 12px;transition:.18s;color:var(--ink)}
+.chapter-node{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;width:100%;text-align:left;border:1px solid var(--line);background:#f0e7d5;border-radius:11px;padding:11px 12px;transition:.18s;color:var(--ink)}
+.chapter-node .node-req{width:100%;flex-basis:100%;order:3;font-size:9px;color:var(--muted)}
 .chapter-node:hover:not(:disabled){transform:translateY(-1px);border-color:#baaa86}
 .chapter-node .node-ico{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:#e1e8dc;color:var(--teal);font-size:12px;flex:none}
 .chapter-node .node-title{font-size:12px;font-weight:650;flex:1}
@@ -218,4 +219,6 @@ body:not([data-theme="mecha"]):not([data-theme="wasteland"]):not([data-theme="fu
 .chapter-node.locked .node-ico{background:#e0d7c6;color:#9d8e74}
 .chapter-node.done .node-ico{background:#5b9280;color:#fff9ed}
 .chapter-node.done .node-reward{color:#5b9280}
+.challenge-stars{text-align:center;font-size:24px;color:#e7b04a;margin:8px 0;letter-spacing:4px}
+.challenge-stars .dim{color:#d8cdb6}
 @media(max-width:900px){.chapter-map{grid-template-columns:1fr}.chapter-map-wrap{position:relative;left:auto;right:auto;margin-top:20px}.chapter-head p{min-height:auto}}
