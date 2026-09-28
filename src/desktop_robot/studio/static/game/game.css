@@ -214,7 +214,7 @@ body:not([data-theme="mecha"]):not([data-theme="wasteland"]):not([data-theme="fu
 /* —— 零件引线标注（装配台风签名元素） —— */
 .kit-callouts{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
 .kit-callout{position:absolute;display:flex;align-items:center;white-space:nowrap;
-  font-size:9px;font-weight:600;letter-spacing:1.6px;color:#e9ebf2;
+  font-size:11px;font-weight:600;letter-spacing:0.5px;color:#e9ebf2;
   text-shadow:0 1px 6px #000000d0;transform:translate(10px,-50%)}
 .kit-callout i.dot{width:5px;height:5px;border:1px solid #ffffffcc;border-radius:50%;flex:none}
 .kit-callout i.ln{display:block;width:22px;height:1px;background:#ffffffad;margin:0 6px;flex:none}
