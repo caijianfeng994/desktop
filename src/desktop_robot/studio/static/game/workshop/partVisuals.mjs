@@ -28,6 +28,37 @@ function darkMetal() {
   return new THREE.MeshStandardMaterial({color: 0x3a4248, roughness: 0.4, metalness: 0.85});
 }
 
+/**
+ * 倒角长方体：用 ExtrudeGeometry + bevel 替代 BoxGeometry，
+ * 但把基础形状缩小 2*bevelSize，使最终包围盒仍精确等于 (w,h,d)。
+ * 这样视觉去掉了纯方块的锐利棱，却不会与碰撞盒、挂点、可达半径脱节
+ * （这是 phase 2 的硬约束：视觉尺寸必须与物理尺寸一致）。
+ * @param {number} w @param {number} h @param {number} d 米
+ * @param {number} [r] 倒角半径，缺省按最短边 14% 自适应
+ */
+function rbox(w, h, d, r) {
+  r = r ?? Math.min(w, h, d) * 0.14;
+  r = Math.min(Math.max(r, 0.002), w / 2, h / 2, d / 2 - 0.001);
+  const bw = w - 2 * r, bh = h - 2 * r;
+  const s = new THREE.Shape();
+  s.moveTo(-bw / 2, -bh / 2);
+  s.lineTo(bw / 2, -bh / 2);
+  s.lineTo(bw / 2, bh / 2);
+  s.lineTo(-bw / 2, bh / 2);
+  s.closePath();
+  const bt = Math.min(0.012, d * 0.1);
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: Math.max(0.001, d - 2 * bt),
+    bevelEnabled: true,
+    bevelThickness: bt,
+    bevelSize: r,
+    bevelSegments: 3,
+    steps: 1,
+  });
+  geo.translate(0, 0, -d / 2);
+  return geo;
+}
+
 /** 描边：让叠在一起的面板能分出边界（一眼能看出「改过」） */
 function withEdges(mesh, color = 0x9ef0e8) {
   const edges = new THREE.LineSegments(
@@ -92,18 +123,18 @@ export function createPartVisual(partId, size, opts = {}) {
 
   if (partId === 'mecha_head') {
     // 尖颔头罩 + 宽面罩：一眼是「头」不是方块
-    const cranium = panel(new THREE.BoxGeometry(sx * 0.85, sy * 0.7, sz * 0.75));
+    const cranium = panel(rbox(sx * 0.85, sy * 0.7, sz * 0.75));
     cranium.position.y = sy * 0.05;
-    const jaw = panel(new THREE.BoxGeometry(sx * 0.7, sy * 0.28, sz * 0.55), darkMetal());
+    const jaw = panel(rbox(sx * 0.7, sy * 0.28, sz * 0.55), darkMetal());
     jaw.position.set(0, -sy * 0.28, sz * 0.08);
-    const visor = panel(new THREE.BoxGeometry(sx * 0.78, sy * 0.22, 0.012), accentMat());
+    const visor = panel(rbox(sx * 0.78, sy * 0.22, 0.012), accentMat());
     visor.position.set(0, sy * 0.12, sz * 0.4);
     const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, sy * 0.55, 6), darkMetal());
     antenna.position.set(sx * 0.28, sy * 0.45, -sz * 0.05);
-    const crest = panel(new THREE.BoxGeometry(sx * 0.1, sy * 0.65, sz * 0.65), darkMetal());
+    const crest = panel(rbox(sx * 0.1, sy * 0.65, sz * 0.65), darkMetal());
     crest.position.set(0, sy * 0.35, -sz * 0.05);
-    const cheekL = panel(new THREE.BoxGeometry(sx * 0.28, sy * 0.4, sz * 0.4));
-    const cheekR = panel(new THREE.BoxGeometry(sx * 0.28, sy * 0.4, sz * 0.4));
+    const cheekL = panel(rbox(sx * 0.28, sy * 0.4, sz * 0.4));
+    const cheekR = panel(rbox(sx * 0.28, sy * 0.4, sz * 0.4));
     cheekL.position.set(-sx * 0.48, 0, sz * 0.05);
     cheekR.position.set(sx * 0.48, 0, sz * 0.05);
     root.add(cranium, jaw, visor, antenna, crest, cheekL, cheekR);
@@ -112,19 +143,19 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'armor_torso') {
-    const chest = panel(new THREE.BoxGeometry(sx * 1.05, sy * 0.9, sz * 0.85));
-    const abs = panel(new THREE.BoxGeometry(sx * 0.85, sy * 0.35, sz * 0.7), darkMetal());
+    const chest = panel(rbox(sx * 1.05, sy * 0.9, sz * 0.85));
+    const abs = panel(rbox(sx * 0.85, sy * 0.35, sz * 0.7), darkMetal());
     abs.position.y = -sy * 0.35;
-    const plow = panel(new THREE.BoxGeometry(sx * 1.0, sy * 0.28, sz * 0.45), darkMetal());
+    const plow = panel(rbox(sx * 1.0, sy * 0.28, sz * 0.45), darkMetal());
     plow.position.set(0, -sy * 0.2, sz * 0.42);
     plow.rotation.x = -0.45;
-    const collar = panel(new THREE.BoxGeometry(sx * 0.65, sy * 0.18, sz * 0.55));
+    const collar = panel(rbox(sx * 0.65, sy * 0.18, sz * 0.55));
     collar.position.y = sy * 0.48;
-    const skirtL = panel(new THREE.BoxGeometry(sx * 0.22, sy * 0.55, sz * 0.5));
-    const skirtR = panel(new THREE.BoxGeometry(sx * 0.22, sy * 0.55, sz * 0.5));
+    const skirtL = panel(rbox(sx * 0.22, sy * 0.55, sz * 0.5));
+    const skirtR = panel(rbox(sx * 0.22, sy * 0.55, sz * 0.5));
     skirtL.position.set(-sx * 0.55, -sy * 0.15, 0);
     skirtR.position.set(sx * 0.55, -sy * 0.15, 0);
-    const coreGlow = panel(new THREE.BoxGeometry(sx * 0.35, sy * 0.25, 0.012), accentMat());
+    const coreGlow = panel(rbox(sx * 0.35, sy * 0.25, 0.012), accentMat());
     coreGlow.position.set(0, sy * 0.1, sz * 0.44);
     root.add(chest, abs, plow, collar, skirtL, skirtR, coreGlow);
     root.userData.visualHalfH = sy / 2;
@@ -132,13 +163,13 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'armor_shoulder') {
-    const pauldron = panel(new THREE.BoxGeometry(sx * 1.15, sy * 0.65, sz * 1.05));
+    const pauldron = panel(rbox(sx * 1.15, sy * 0.65, sz * 1.05));
     pauldron.position.x = sx * 0.08;
-    const spike = panel(new THREE.BoxGeometry(sx * 0.4, sy * 0.85, sz * 0.4), darkMetal());
+    const spike = panel(rbox(sx * 0.4, sy * 0.85, sz * 0.4), darkMetal());
     spike.position.set(sx * 0.15, sy * 0.45, -sz * 0.1);
-    const rail = panel(new THREE.BoxGeometry(sx * 0.35, sy * 0.22, sz * 1.05), accentMat());
+    const rail = panel(rbox(sx * 0.35, sy * 0.22, sz * 1.05), accentMat());
     rail.position.set(0, sy * 0.2, 0);
-    const guard = panel(new THREE.BoxGeometry(sx * 0.55, sy * 0.35, sz * 0.35), darkMetal());
+    const guard = panel(rbox(sx * 0.55, sy * 0.35, sz * 0.35), darkMetal());
     guard.position.set(sx * 0.25, -sy * 0.15, sz * 0.25);
     root.add(pauldron, spike, rail, guard);
     root.userData.visualHalfH = sy / 2;
@@ -146,13 +177,13 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'mecha_leg') {
-    const hip = panel(new THREE.BoxGeometry(sx * 0.95, sy * 0.22, sz * 0.8), darkMetal());
+    const hip = panel(rbox(sx * 0.95, sy * 0.22, sz * 0.8), darkMetal());
     hip.position.y = sy * 0.38;
-    const thigh = panel(new THREE.BoxGeometry(sx * 0.9, sy * 0.42, sz * 0.75));
+    const thigh = panel(rbox(sx * 0.9, sy * 0.42, sz * 0.75));
     thigh.position.y = sy * 0.12;
-    const shin = panel(new THREE.BoxGeometry(sx * 0.75, sy * 0.42, sz * 0.6), darkMetal());
+    const shin = panel(rbox(sx * 0.75, sy * 0.42, sz * 0.6), darkMetal());
     shin.position.y = -sy * 0.22;
-    const foot = panel(new THREE.BoxGeometry(sx * 1.05, sy * 0.14, sz * 1.15));
+    const foot = panel(rbox(sx * 1.05, sy * 0.14, sz * 1.15));
     foot.position.set(0, -sy * 0.48, sz * 0.18);
     const knee = withEdges(
       new THREE.Mesh(
@@ -168,7 +199,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'backpack_frame') {
-    const frame = panel(new THREE.BoxGeometry(sx * 1.05, sy * 1.05, sz * 0.6));
+    const frame = panel(rbox(sx * 1.05, sy * 1.05, sz * 0.6));
     const tankL = withEdges(
       new THREE.Mesh(new THREE.CylinderGeometry(sx * 0.26, sx * 0.26, sy * 0.85, 12), darkMetal()),
     );
@@ -177,9 +208,9 @@ export function createPartVisual(partId, size, opts = {}) {
     );
     tankL.position.set(-sx * 0.38, 0, -sz * 0.2);
     tankR.position.set(sx * 0.38, 0, -sz * 0.2);
-    const bar = panel(new THREE.BoxGeometry(sx * 0.95, sy * 0.14, sz * 0.25), accentMat());
+    const bar = panel(rbox(sx * 0.95, sy * 0.14, sz * 0.25), accentMat());
     bar.position.z = -sz * 0.32;
-    const fin = panel(new THREE.BoxGeometry(sx * 0.12, sy * 0.7, sz * 0.55), darkMetal());
+    const fin = panel(rbox(sx * 0.12, sy * 0.7, sz * 0.55), darkMetal());
     fin.position.set(0, sy * 0.15, -sz * 0.35);
     root.add(frame, tankL, tankR, bar, fin);
     root.userData.visualHalfH = sy / 2;
@@ -187,7 +218,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'weapon_rifle') {
-    const receiver = panel(new THREE.BoxGeometry(sx * 0.85, sy * 0.65, sz * 0.4));
+    const receiver = panel(rbox(sx * 0.85, sy * 0.65, sz * 0.4));
     const barrel = withEdges(
       new THREE.Mesh(
         new THREE.CylinderGeometry(Math.min(sx, sy) * 0.22, Math.min(sx, sy) * 0.16, sz * 0.95, 12),
@@ -196,13 +227,13 @@ export function createPartVisual(partId, size, opts = {}) {
     );
     barrel.rotation.x = Math.PI / 2;
     barrel.position.z = sz * 0.28;
-    const shroud = panel(new THREE.BoxGeometry(sx * 0.55, sy * 0.4, sz * 0.55), darkMetal());
+    const shroud = panel(rbox(sx * 0.55, sy * 0.4, sz * 0.55), darkMetal());
     shroud.position.z = sz * 0.15;
-    const stock = panel(new THREE.BoxGeometry(sx * 0.55, sy * 0.45, sz * 0.28));
+    const stock = panel(rbox(sx * 0.55, sy * 0.45, sz * 0.28));
     stock.position.z = -sz * 0.38;
-    const sight = panel(new THREE.BoxGeometry(sx * 0.28, sy * 0.3, sz * 0.22), accentMat());
+    const sight = panel(rbox(sx * 0.28, sy * 0.3, sz * 0.22), accentMat());
     sight.position.set(0, sy * 0.4, -sz * 0.05);
-    const mag = panel(new THREE.BoxGeometry(sx * 0.35, sy * 0.45, sz * 0.18), darkMetal());
+    const mag = panel(rbox(sx * 0.35, sy * 0.45, sz * 0.18), darkMetal());
     mag.position.set(0, -sy * 0.35, -sz * 0.05);
     root.add(receiver, barrel, shroud, stock, sight, mag);
     root.userData.visualHalfH = sy / 2;
@@ -211,7 +242,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'thruster_pack') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.85, sy * 0.7, sz * 0.55), mat());
+    const body = new THREE.Mesh(rbox(sx * 0.85, sy * 0.7, sz * 0.55), mat());
     const nozzle = (x) => {
       const n = new THREE.Mesh(
         new THREE.CylinderGeometry(sx * 0.18, sx * 0.28, sz * 0.45, 12),
@@ -232,7 +263,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'winch_module') {
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(sx, sy * 0.7, sz * 0.55), mat());
+    const housing = new THREE.Mesh(rbox(sx, sy * 0.7, sz * 0.55), mat());
     const drum = new THREE.Mesh(
       new THREE.CylinderGeometry(Math.min(sx, sy) * 0.35, Math.min(sx, sy) * 0.35, sx * 0.7, 14),
       darkMetal(),
@@ -251,8 +282,8 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'heavy_plate') {
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat());
-    const ridge = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.9, sy * 1.2, sz * 0.15), darkMetal());
+    const plate = new THREE.Mesh(rbox(sx, sy, sz), mat());
+    const ridge = new THREE.Mesh(rbox(sx * 0.9, sy * 1.2, sz * 0.15), darkMetal());
     ridge.position.z = sz * 0.35;
     const boltGeo = new THREE.CylinderGeometry(0.006, 0.006, sy * 1.6, 6);
     for (const [bx, bz] of [
@@ -273,8 +304,8 @@ export function createPartVisual(partId, size, opts = {}) {
   if (partId === 'gripper') {
     const open = Number.isFinite(opts.gripperOpen) ? opts.gripperOpen : 1;
     const spread = 0.012 + open * Math.max(0.01, sx * 0.45);
-    const palm = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.55, sy * 0.7, sz * 0.35), mat());
-    const jawGeo = new THREE.BoxGeometry(sx * 0.22, sy * 0.55, sz * 0.75);
+    const palm = new THREE.Mesh(rbox(sx * 0.55, sy * 0.7, sz * 0.35), mat());
+    const jawGeo = rbox(sx * 0.22, sy * 0.55, sz * 0.75);
     const left = new THREE.Mesh(jawGeo, mat());
     const right = new THREE.Mesh(jawGeo, mat());
     left.position.set(-spread, 0, sz * 0.28);
@@ -285,7 +316,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'revolute_joint' || partId === 'prism_joint') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(sx, sy * 0.7, sz), mat());
+    const body = new THREE.Mesh(rbox(sx, sy * 0.7, sz), mat());
     const axis = new THREE.Mesh(
       new THREE.CylinderGeometry(Math.min(sx, sz) * 0.22, Math.min(sx, sz) * 0.22, sy * 1.15, 12),
       darkMetal(),
@@ -302,7 +333,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'beam' || partId === 'post') {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat());
+    const bar = new THREE.Mesh(rbox(sx, sy, sz), mat());
     const capR = Math.min(sx, sy, sz) * 0.45;
     const cap = new THREE.Mesh(
       new THREE.CylinderGeometry(capR, capR, Math.min(sx, sy, sz) * 0.35, 10),
@@ -320,7 +351,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'plate') {
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat());
+    const plate = new THREE.Mesh(rbox(sx, sy, sz), mat());
     const boltGeo = new THREE.CylinderGeometry(0.004, 0.004, sy * 1.4, 6);
     const boltMat = darkMetal();
     for (const [bx, bz] of [
@@ -339,7 +370,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'track_module') {
-    const belt = new THREE.Mesh(new THREE.BoxGeometry(sx, sy * 0.7, sz), mat());
+    const belt = new THREE.Mesh(rbox(sx, sy * 0.7, sz), mat());
     const roller = (z) => {
       const r = new THREE.Mesh(
         new THREE.CylinderGeometry(sy * 0.35, sy * 0.35, sx * 1.1, 10),
@@ -355,10 +386,10 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'core') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.9, sy * 0.9, sz * 0.9), mat());
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(sx, sy * 0.2, sz), darkMetal());
+    const body = new THREE.Mesh(rbox(sx * 0.9, sy * 0.9, sz * 0.9), mat());
+    const frame = new THREE.Mesh(rbox(sx, sy * 0.2, sz), darkMetal());
     frame.position.y = sy * 0.35;
-    const lens = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.45, sy * 0.18, 0.01), accentMat());
+    const lens = new THREE.Mesh(rbox(sx * 0.45, sy * 0.18, 0.01), accentMat());
     lens.position.z = sz / 2 + 0.005;
     const portL = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.02, 8), accentMat());
     const portR = portL.clone();
@@ -372,7 +403,7 @@ export function createPartVisual(partId, size, opts = {}) {
   }
 
   if (partId === 'hook') {
-    const box = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat());
+    const box = new THREE.Mesh(rbox(sx, sy, sz), mat());
     const tip = new THREE.Mesh(
       new THREE.TorusGeometry(Math.min(sx, sz) * 0.35, Math.min(sx, sz) * 0.12, 8, 16, Math.PI),
       mat(),
@@ -384,7 +415,7 @@ export function createPartVisual(partId, size, opts = {}) {
     return root;
   }
 
-  const box = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat());
+  const box = new THREE.Mesh(rbox(sx, sy, sz), mat());
   root.add(box);
   root.userData.visualHalfH = sy / 2;
   return root;
