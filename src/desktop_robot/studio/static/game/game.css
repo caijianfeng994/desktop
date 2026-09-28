@@ -23,8 +23,8 @@ body[data-view="build"] #world,body[data-view="yard"] #world{visibility:hidden}
 /* —— 视觉主题：装配台 / 玩具 / 机甲 / 废土 / 未来 —— */
 /* 装配台：深炭影棚 UI（默认主题，不改 :root 的温暖值） */
 body[data-theme="kit"]{
-  --ink:#e9ebf1;--muted:#989eab;--cream:#202329;--line:#3a3f48;--teal:#e8722c;--amber:#ffb060;
-  --shadow:0 14px 40px #0a0c1066;color:var(--ink);background:#191b20;
+  --ink:#dfe7f2;--muted:#7f93a8;--cream:#101720;--line:#26313e;--teal:#54d8ff;--amber:#8fd8ff;
+  --shadow:0 14px 40px #04070c99;color:var(--ink);background:#0c1219;
 }
 body[data-theme="kit"] .paper,
 body[data-theme="kit"] .build-world,
@@ -33,13 +33,13 @@ body[data-theme="kit"] .cam-btn,
 body[data-theme="kit"] .build-part-btn,
 body[data-theme="kit"] .bottom-nav,
 body[data-theme="kit"] .top-theme,
-body[data-theme="kit"] .resource{background:#25282eee;border-color:#3a3f48;color:var(--ink)}
-body[data-theme="kit"] .cam-btn:hover{background:#2e323a}
+body[data-theme="kit"] .resource{background:#131c26ee;border-color:#26313e;color:var(--ink)}
+body[data-theme="kit"] .cam-btn:hover{background:#1c2836}
 body[data-theme="kit"] .theme-btn.is-active,
-body[data-theme="kit"] .primary{background:linear-gradient(135deg,#e8722c,#c4551e);border-color:#e8722c;color:#fff4e8}
-body[data-theme="kit"] .dark{background:#31353e;border-color:#8a919e;color:#e9ebf1}
-body[data-theme="kit"] .yard-debug-hud{background:#1c1f24ee;border-color:#8a919e88;color:#d8dce4}
-body[data-theme="kit"] .vignette{background:radial-gradient(ellipse at 50% 30%,#e8722c14,transparent 55%),linear-gradient(0deg,#10121688,transparent 40%)}
+body[data-theme="kit"] .primary{background:linear-gradient(135deg,#54d8ff,#1e8fc8);border-color:#54d8ff;color:#04121c}
+body[data-theme="kit"] .dark{background:#1a2430;border-color:#4a5e74;color:#dfe7f2}
+body[data-theme="kit"] .yard-debug-hud{background:#101822ee;border-color:#4a5e7488;color:#c8d8e8}
+body[data-theme="kit"] .vignette{background:radial-gradient(ellipse at 50% 30%,#54d8ff12,transparent 55%),linear-gradient(0deg,#050a1088,transparent 40%)}
 
 /* 玩具：蓝紫影棚 UI */
 body[data-theme="toy"]{

@@ -8,30 +8,30 @@ export const THEME_IDS = Object.freeze(['kit', 'toy', 'warm', 'mecha', 'wastelan
 const THEMES = {
   kit: {
     id: 'kit',
-    label: '装配台',
+    label: '装配舱',
     scene: {
-      // 深炭影棚：装配台氛围（参考零件展示图）
-      background: 0x212429,
-      fog: {color: 0x24272d, near: 16, far: 52},
+      // 深蓝机库：环臂机械手装配舱氛围（参考图）
+      background: 0x0c1219,
+      fog: {color: 0x0c1219, near: 9, far: 30},
     },
     lights: {
-      hemiSky: 0xdde4ee, // 冷白天光
-      hemiGround: 0x2c2f36,
-      hemiIntensity: 1.35,
-      sunColor: 0xf2f6fc, // 冷白主灯
-      sunIntensity: 2.5,
-      fillColor: 0xe8722c, // 橙色补光（呼应条纹）
-      fillIntensity: 0.5,
+      hemiSky: 0x8fb2d8, // 冷蓝天光
+      hemiGround: 0x11161d,
+      hemiIntensity: 0.8,
+      sunColor: 0xdfe9f5, // 冷白顶光
+      sunIntensity: 2.2,
+      fillColor: 0x54d8ff, // 青色补光（呼应灯带）
+      fillIntensity: 0.75,
     },
     env: {
-      ground: {color: 0x2b2e34, roughness: 0.85, metalness: 0.18},
-      wall: {color: 0x33373e, roughness: 0.7, metalness: 0.2},
-      door: {color: 0x4a505a, roughness: 0.5, metalness: 0.3},
-      ramp: {color: 0x3a3f47, roughness: 0.75, metalness: 0.2},
-      drawer: {color: 0x33373e, roughness: 0.75, metalness: 0.2},
+      ground: {color: 0x10151c, roughness: 0.55, metalness: 0.55},
+      wall: {color: 0x1a2028, roughness: 0.7, metalness: 0.2},
+      door: {color: 0x2a323c, roughness: 0.5, metalness: 0.3},
+      ramp: {color: 0x232a33, roughness: 0.75, metalness: 0.2},
+      drawer: {color: 0x1e242c, roughness: 0.75, metalness: 0.2},
       receive: {color: 0x4ec8b0, roughness: 0.45, metalness: 0.25},
       block: {color: 0xe8722c, roughness: 0.5, metalness: 0.1},
-      editorGround: {color: 0x2d3138, roughness: 0.82, metalness: 0.16},
+      editorGround: {color: 0x161c24, roughness: 0.4, metalness: 0.5},
     },
     materials: {
       metal: {color: 0xc8ccd4, roughness: 0.32, metalness: 0.7},

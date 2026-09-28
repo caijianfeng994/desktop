@@ -50,6 +50,8 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];co
 let actionSettled=Promise.resolve(),finishAction=()=>{},navigationVersion=0,navigating=false;
 let state=null,view='home',scene=null,busy=false,filter='全部',routeVersion=0,toastTimer;const modal=$('#modal');
 let editorScene=null,buildHistory=createHistory(),buildBp=null,buildSelected=null,pendingBuildPart=null,editorReady=null;
+// 调试/自动化钩子：冒烟脚本可直接操纵装配舱场景
+try{Object.defineProperty(window,'__editorScene',{get:()=>editorScene})}catch{}
 let pendingAttach=null; // {parentInstanceId, pointId, partId}
 let buildSlotTab='head'; // 机库左栏当前槽位 tab
 const BUILD_SLOT_TABS=[

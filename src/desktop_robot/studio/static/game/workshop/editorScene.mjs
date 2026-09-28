@@ -12,6 +12,7 @@ import {createPartVisual, placePartVisual} from './partVisuals.mjs';
 import {damp, standardViewOrbit} from './cameraRig.mjs';
 import {getTheme, normalizeThemeId, themeForQuality} from './visualTheme.mjs';
 import {buildEnvironment, createBloomComposer} from '../renderFx.mjs';
+import {createHangarDressing} from './hangarDressing.mjs';
 
 /** 与 Python PART_DEFINITIONS 对齐的 fallback 尺寸（米） */
 export const PART_SIZES = Object.freeze({
@@ -184,6 +185,11 @@ export class BlueprintEditorScene {
     this.ground = ground;
     this.groundRing = null;
 
+    // 工业装配舱陈设（kit 主题可见）：环臂机械手 + 灯带 + 散件
+    this.dressing = createHangarDressing();
+    this.dressing.setVisible(this.themeId === 'kit');
+    this.scene.add(this.dressing.group);
+
     this.root = new THREE.Group();
     this.scene.add(this.root);
     this.scene.add(this.markers);
@@ -305,16 +311,20 @@ export class BlueprintEditorScene {
   _applyThemeVisuals() {
     const theme = themeForQuality(getTheme(this.themeId), this.quality);
     this.scene.background = new THREE.Color(theme.scene.background);
-    // 装配预览始终关闭雾，保证机体可读
-    this.scene.fog = null;
+    // kit 装配舱主题开轻雾营造机库纵深；其余主题保持无雾（机体可读优先）
+    const fog = theme.scene.fog;
+    this.scene.fog = this.themeId === 'kit' && fog
+      ? new THREE.Fog(fog.color, Math.min(9, fog.near), Math.min(34, fog.far))
+      : null;
+    this.dressing?.setVisible?.(this.themeId === 'kit');
     if (this.hemi) {
       this.hemi.color.set(theme.lights.hemiSky);
       this.hemi.groundColor.set(theme.lights.hemiGround);
-      this.hemi.intensity = Math.max(1.35, theme.lights.hemiIntensity);
+      this.hemi.intensity = Math.max(0.55, theme.lights.hemiIntensity);
     }
     if (this.sun) {
       this.sun.color.set(theme.lights.sunColor);
-      this.sun.intensity = Math.max(2.0, theme.lights.sunIntensity);
+      this.sun.intensity = Math.max(1.4, theme.lights.sunIntensity);
     }
     if (this.fill) {
       this.fill.color.set(theme.lights.fillColor ?? 0xc8d8e0);
@@ -787,6 +797,7 @@ export class BlueprintEditorScene {
       this._flashUntil = 0;
       this._applySelection();
     }
+    this.dressing?.update?.(now / 1000);
     if (this.quality === 'high' && this._bloom?.composer) {
       this._bloom.composer.render();
     } else {
@@ -814,6 +825,7 @@ export class BlueprintEditorScene {
     this.renderer.dispose();
     this._envMap?.dispose?.();
     this._bloom?.composer?.dispose?.();
+    this.dressing?.dispose?.();
     this.calloutLayer?.remove();
     this._calloutEls?.clear();
     this.renderer.domElement.remove();
