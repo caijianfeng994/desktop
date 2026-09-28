@@ -9,8 +9,9 @@ import {UnrealBloomPass} from '../vendor/three/postprocessing/UnrealBloomPass.js
 import {OutputPass} from '../vendor/three/postprocessing/OutputPass.js';
 
 /**
- * 用一张竖向渐变（顶部偏亮、底部偏暗、中部一条高光带）生成环境贴图，
- * 让金属/装甲件获得可信的反射，而不依赖任何外部 HDR 资产。
+ * 用一张竖向渐变生成「蓝紫影棚」环境贴图：顶部淡紫天光、中部冷紫墙面、
+ * 一条暖色灯带（实用灯）与冷紫地面对比，让漆面 clearcoat 拿到方向性反射，
+ * 不依赖任何外部 HDR 资产。
  * @param {THREE.WebGLRenderer} renderer
  * @returns {THREE.Texture|null}
  */
@@ -21,20 +22,25 @@ export function buildEnvironment(renderer) {
     c.height = 256;
     const ctx = c.getContext('2d');
     const g = ctx.createLinearGradient(0, 0, 0, 256);
-    g.addColorStop(0, '#bcd4dc'); // 天顶
-    g.addColorStop(0.45, '#5d7e88');
-    g.addColorStop(0.55, '#e7f6ff'); // 高光带（灯）
-    g.addColorStop(0.7, '#2b3c44');
-    g.addColorStop(1, '#101a1f'); // 地面
+    g.addColorStop(0, '#b0b4e8'); // 淡紫天光
+    g.addColorStop(0.42, '#5a5a9a'); // 冷紫墙面
+    g.addColorStop(0.55, '#3a3a68');
+    g.addColorStop(0.7, '#2a2a4a');
+    g.addColorStop(1, '#202038'); // 深紫地面
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 512, 256);
-    // 几束「灯」增强方向性反射
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    for (const x of [90, 256, 420]) {
+    // 暖色实用灯（主光方向性反射）
+    ctx.fillStyle = 'rgba(255,214,160,0.95)';
+    for (const x of [110, 400]) {
       ctx.beginPath();
-      ctx.ellipse(x, 130, 34, 14, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, 118, 40, 16, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    // 冷紫色补光带
+    ctx.fillStyle = 'rgba(150,160,255,0.8)';
+    ctx.beginPath();
+    ctx.ellipse(256, 140, 70, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
     const tex = new THREE.CanvasTexture(c);
     tex.mapping = THREE.EquirectangularReflectionMapping;
     tex.colorSpace = THREE.SRGBColorSpace;

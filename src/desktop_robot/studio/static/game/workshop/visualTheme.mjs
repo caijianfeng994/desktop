@@ -3,9 +3,46 @@
  * 仅表现层；不改变物理与蓝图语义。
  */
 
-export const THEME_IDS = Object.freeze(['warm', 'mecha', 'wasteland', 'future']);
+export const THEME_IDS = Object.freeze(['toy', 'warm', 'mecha', 'wasteland', 'future']);
 
 const THEMES = {
+  toy: {
+    id: 'toy',
+    label: '玩具',
+    scene: {
+      // 蓝紫影棚氛围：深紫背景 + 微紫雾
+      background: 0x23233c,
+      fog: {color: 0x2a2a4a, near: 16, far: 52},
+    },
+    lights: {
+      hemiSky: 0xb0b4e8, // 淡紫天光
+      hemiGround: 0x3a3060,
+      hemiIntensity: 1.35,
+      sunColor: 0xffd9a8, // 暖色主灯
+      sunIntensity: 2.4,
+      fillColor: 0x8890e0, // 紫色补光
+      fillIntensity: 0.7,
+    },
+    env: {
+      ground: {color: 0x32324e, roughness: 0.8, metalness: 0.15},
+      wall: {color: 0x3c3c60, roughness: 0.6, metalness: 0.2},
+      door: {color: 0x5a5a8c, roughness: 0.45, metalness: 0.35},
+      ramp: {color: 0x44446a, roughness: 0.7, metalness: 0.2},
+      drawer: {color: 0x3a3a58, roughness: 0.7, metalness: 0.2},
+      receive: {color: 0x4ec8b0, roughness: 0.45, metalness: 0.25},
+      block: {color: 0xe8722c, roughness: 0.5, metalness: 0.1},
+      editorGround: {color: 0x2c2c48, roughness: 0.75, metalness: 0.15},
+    },
+    materials: {
+      // 奶白漆面 + 塑料感；金属度压低，clearcoat 在 partVisuals 里叠
+      metal: {color: 0xd8d0c0, roughness: 0.4, metalness: 0.3},
+      plastic: {color: 0xece3d0, roughness: 0.5, metalness: 0.05},
+      rubber: {color: 0x3a3a40, roughness: 0.75, metalness: 0.08},
+      accent: {color: 0xe8722c, roughness: 0.4, metalness: 0.1, emissive: 0x602800, emissiveIntensity: 0.35},
+      tool: {color: 0xb0512e, roughness: 0.5, metalness: 0.2, emissive: 0x401408, emissiveIntensity: 0.2},
+    },
+    markers: {default: 0x9fd8ff, ok: 0x5adf9a, bad: 0xff6070},
+  },
   warm: {
     id: 'warm',
     label: '温暖',

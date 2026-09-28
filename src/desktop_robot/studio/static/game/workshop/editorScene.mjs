@@ -100,7 +100,7 @@ export class BlueprintEditorScene {
     this.previewRoot.visible = false;
     this._flashUntil = 0;
     this._hoveredPoint = null;
-    this.themeId = 'warm';
+    this.themeId = 'toy';
     this.quality = 'high';
 
     this.scene = new THREE.Scene();

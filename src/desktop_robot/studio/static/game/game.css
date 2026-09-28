@@ -20,6 +20,27 @@ body[data-view="build"] #world,body[data-view="yard"] #world{visibility:hidden}
 .top-theme .cam-btn{padding:5px 9px;font-size:11px}
 .theme-btn.is-active{background:var(--teal);border-color:var(--teal);color:#fff9ed}
 
+/* —— 视觉主题：玩具 / 机甲 / 废土 / 未来 —— */
+/* 玩具：蓝紫影棚 UI（默认主题，不改 :root 的温暖值） */
+body[data-theme="toy"]{
+  --ink:#e8e6ff;--muted:#9a96c8;--cream:#1c1c30;--line:#3c3c60;--teal:#e8722c;--amber:#ffb060;
+  --shadow:0 14px 40px #0a0a1866;color:var(--ink);background:#181830;
+}
+body[data-theme="toy"] .paper,
+body[data-theme="toy"] .build-world,
+body[data-theme="toy"] .yard-world,
+body[data-theme="toy"] .cam-btn,
+body[data-theme="toy"] .build-part-btn,
+body[data-theme="toy"] .bottom-nav,
+body[data-theme="toy"] .top-theme,
+body[data-theme="toy"] .resource{background:#222244ee;border-color:#3c3c68;color:var(--ink)}
+body[data-theme="toy"] .cam-btn:hover{background:#2c2c50}
+body[data-theme="toy"] .theme-btn.is-active,
+body[data-theme="toy"] .primary{background:linear-gradient(135deg,#e8722c,#c4551e);border-color:#e8722c;color:#fff4e8}
+body[data-theme="toy"] .dark{background:#2e2e52;border-color:#8890e0;color:#e8e6ff}
+body[data-theme="toy"] .yard-debug-hud{background:#1a1a30ee;border-color:#8890e088;color:#d8d8ff}
+body[data-theme="toy"] .vignette{background:radial-gradient(ellipse at 50% 30%,#8890e022,transparent 55%),linear-gradient(0deg,#12122a88,transparent 40%)}
+
 /* —— 视觉主题：机甲 / 废土 / 未来（温暖为默认，不改 :root） —— */
 body[data-theme="mecha"]{
   --ink:#d8f4f0;--muted:#7aa8a8;--cream:#122028;--line:#2a4a52;--teal:#2ee6d6;--amber:#5ad4e0;

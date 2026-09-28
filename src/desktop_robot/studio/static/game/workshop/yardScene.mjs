@@ -102,7 +102,7 @@ export class YardScene {
     this.fps = 0;
     this._fpsAcc = 0;
     this._fpsFrames = 0;
-    this.themeId = 'warm';
+    this.themeId = 'toy';
     this.quality = 'high';
     this.combat = null;
     this.winch = null;

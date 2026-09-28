@@ -65,13 +65,13 @@ let buildDirty=false,buildSaving=false,buildSaveFailed=false,pendingComponent=nu
 let yardScene=null,yardReady=null,yardKeys={forward:0,turn:0,joint:0,extend:0,grasp:0,fire:0,thrust:0,winch:0},yardChallengeSubmitting=false;
 let yardDiagTimer=null;
 const THEME_KEY='gameVisualTheme';
-const THEME_IDS=new Set(['warm','mecha','wasteland','future']);
+const THEME_IDS=new Set(['toy','warm','mecha','wasteland','future']);
 function normalizeThemeId(id){
  const s=String(id||'').trim().toLowerCase();
- return THEME_IDS.has(s)?s:'warm';
+ return THEME_IDS.has(s)?s:'toy';
 }
 function readStoredTheme(){
- try{return normalizeThemeId(localStorage.getItem(THEME_KEY))}catch{return 'warm'}
+ try{return normalizeThemeId(localStorage.getItem(THEME_KEY))}catch{return 'toy'}
 }
 function syncThemeButtons(themeId){
  $$('.theme-btn').forEach(btn=>{
@@ -252,13 +252,13 @@ function applyEngineerMechaTemplate({quiet=false}={}){
  applyBuildBlueprint(tpl);
  buildSelected=tpl.root_instance_id;
  editorScene?.setSelected(buildSelected);
- // 机甲主题更易读轮廓；仍可手动切回温暖
- if(normalizeThemeId(document.body.dataset.theme)!=='mecha'){
-  applyVisualTheme('mecha');
+ // 玩具主题最配发光表情与漆面；仍可手动切回其他主题
+ if(normalizeThemeId(document.body.dataset.theme)!=='toy'){
+  applyVisualTheme('toy');
  }
  editorScene?.frameAll?.({snap:true});
  setBuildGuide('工程机甲已装好：头罩、装甲、腿架与肩枪。保存后进试验场。');
- if(!quiet)toast('已装工程机甲：看头罩青绿、肩甲、腿架与金色步枪；点「整机」看全貌');
+ if(!quiet)toast('已装工程机甲：奶白漆面、发光表情、橙色关节与肩炮；点「整机」看全貌');
  return true;
 }
 function applyQuadTemplate({quiet=false}={}){
